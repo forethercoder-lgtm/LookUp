@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ru" data-platform="mac">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LookUp — замер точности</title>
+<meta name="description" content="LookUp: угол экрана по высоте платформы и контроль осанки по камере (0–15°).">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Crect width=%2224%22 height=%2224%22 rx=%226%22 fill=%22%230a0a0b%22/%3E%3Cpath d=%22M12 17V7M7.5 11.5 12 7l4.5 4.5%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body class="measurePage">
+
+<div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<header class="top glass">
+  <a class="brand" href="../">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#0a0a0b"/><path d="M12 17V7M7.5 11.5 12 7l4.5 4.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    LookUp <em class="badge">Замер</em>
+  </a>
+  <nav>
+    <a href="#guide">Инструкция</a>
+    <a href="#live">Старт</a>
+    <a href="#mHead">Голова</a>
+    <a href="#mScreen">Экран</a>
+    <a href="#mDist">Расстояние</a>
+    <a href="#mReport">Отчёт</a>
+  </nav>
+</header>
+
+<main>
+
+<section class="hero">
+  <div class="heroFig" id="heroFig"></div>
+  <div>
+    <h1>0–15°</h1>
+    <p class="lead">Безопасная зона для шеи</p>
+  </div>
+</section>
+
+<section id="problem">
+  <div class="card glass">
+    <h3>Нагрузка на шею, кг</h3>
+    <div id="loadChart" class="bars tall"></div>
+    <p class="src">Hansen, 2014 — модельная оценка</p>
+  </div>
+</section>
+
+<!-- ============ ЭКРАН ============ -->
+<section id="setup">
+  <h2>Экран</h2>
+  <div class="card glass">
+    <div class="seg" id="modeSeg" hidden>
+      <button data-mode="laptop">Ноутбук</button>
+      <button data-mode="monitor">Монитор</button>
+    </div>
+
+    <label class="hInput">
+      <span>Высота платформы</span>
+      <div class="hRow">
+        <input id="cH" type="number" value="20" min="0" max="60" step="0.5" inputmode="decimal">
+        <em>см</em>
+        <input id="cHr" type="range" min="0" max="40" step="0.5" value="20" aria-label="Высота платформы">
+        <button id="btnBest" class="btn ghost small">Оптимально</button>
+      </div>
+    </label>
+
+    <div class="calcOut">
+      <svg id="calcSvg" viewBox="0 0 480 280" role="img" aria-label="Схема: глаз, экран на платформе"></svg>
+      <div class="results">
+        <div class="resTop">
+          <div class="figBig" id="calcFig"></div>
+          <div class="nums">
+            <div class="num"><span id="rLabel">Крышка</span><b id="rLid">—</b></div>
+            <div class="num"><span>Голова</span><b id="rAlpha">—</b></div>
+          </div>
+        </div>
+        <div id="rVerdict" class="status">—</div>
+        <div id="lidNow" class="lidNow">Угол экрана измерю камерой</div>
+        <div id="distNow" class="lidNow"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="guide">
+  <h2>Замер точности</h2>
+  <div class="card glass">
+    <h3>Что нужно</h3>
+    <ul class="plain">
+      <li>Ноутбук с этой страницей (Chrome или Edge), камера включена.</li>
+      <li>Телефон: для фото профиля и приложения «Уровень» (iPhone: «Рулетка» → «Уровень»; Android: «Уровень» или Bubble Level).</li>
+      <li>Помощник. Если его нет — штатив или стопка книг для телефона и таймер съёмки на 10 секунд.</li>
+      <li>Рулетка или линейка, клейкий листок для метки на стене.</li>
+      <li>Стул со спинкой. Время — около 15 минут.</li>
+    </ul>
+    <h3>Подготовка — 3 минуты</h3>
+    <ol class="steps">
+      <li>Поставьте ноутбук так, как будете работать: на платформе нужной высоты, экран открыт так, как вам удобно. Свет должен быть спереди или сверху, не из-за спины.</li>
+      <li>Наклейте листок на стену перед собой на уровне ваших глаз, когда вы сидите прямо. Это метка «вдаль».</li>
+      <li>Сядьте как за работой: спина на спинке, ступни на полу, плечи расслаблены.</li>
+      <li>Нажмите «Старт» ниже и выполните подсказки на экране (расстояние, кадр, свет). Потом смотрите на метку, голова прямо, 3 секунды не двигайтесь. Затем один раз кивните вниз, пока не появится «Готово».</li>
+      <li>До конца замера не двигайте ни ноутбук, ни стул. Если сдвинули — нажмите «Заново» и повторите калибровку.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ КОНТРОЛЬ ============ -->
+<section id="live">
+  <h2>Контроль</h2>
+  <div class="live">
+    <div class="stage glass">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="alertBanner" class="alertBanner" hidden>Голову выше</div>
+      <div id="prep" class="prep" hidden>
+        <span id="pFace" class="chip">Лицо</span>
+        <span id="pDist" class="chip">Дистанция</span>
+        <span id="pFrame" class="chip">Кадр</span>
+        <span id="pSh" class="chip">Плечи</span>
+        <span id="pLight" class="chip">Свет</span>
+        <button id="btnSkip" class="btn ghost small">Пропустить</button>
+      </div>
+      <div id="stageMsg" class="stageMsg">Нажмите «Старт»</div>
+    </div>
+
+    <div class="panel glass">
+      <svg id="gauge" viewBox="0 0 240 150" role="img" aria-label="Угол наклона головы"></svg>
+      <div class="readout">
+        <div class="figLive" id="liveFig"></div>
+        <div class="big"><span id="angleNum">—</span>°</div>
+      </div>
+      <div id="status" class="status">Ожидание</div>
+      <div class="chips">
+        <span id="chipHead" class="chip">Голова</span>
+        <span id="chipSh" class="chip">Плечи</span>
+        <span id="chipScreen" class="chip">Экран</span>
+        <span id="chipImu" class="chip">Наушники</span>
+      </div>
+
+      <div class="row">
+        <button id="btnStart" class="btn">Старт</button>
+        <button id="btnCalib" class="btn ghost" disabled>Заново</button>
+      </div>
+      <div class="row">
+        <button id="btnPhones" class="btn ghost small">Наушники</button>
+        <button id="btnNoCam" class="btn ghost small">Без камеры</button>
+        <button id="btnPip" class="btn ghost small">Фон</button>
+      </div>
+
+      <div id="simBox" hidden>
+        <label>Угол: <b id="simVal">0</b>°
+          <input id="simSlider" type="range" min="-10" max="60" value="0"></label>
+      </div>
+
+      <dl class="stats">
+        <dt>Подготовка</dt><dd id="setupTime">—</dd>
+        <dt>В норме</dt><dd id="sessSafe">—</dd>
+        <dt>Сидим</dt><dd id="sitTime">0:00</dd>
+      </dl>
+
+      <details>
+        <summary>Настройки</summary>
+        <label>Порог, ° <input id="setLimit" type="number" value="15" min="5" max="30"></label>
+        <label>Задержка сирены, сек <input id="setDelay" type="number" value="2" min="0" max="30" step="0.5"></label>
+        <label>Громкость <input id="setVol" type="range" min="0" max="100" value="60"></label>
+        <div class="row">
+          <button id="btnTestSiren" class="btn ghost small">Проверить сирену</button>
+          <button id="btnDemo" class="btn ghost small">Демо без камеры</button>
+          <button id="btnInvert" class="btn ghost small">Сменить знак угла</button>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+
+<section id="mHead">
+  <h2>1. Наклон головы</h2>
+  <div class="card glass">
+    <h3>10 минут, нужен помощник</h3>
+    <ol class="steps">
+      <li>Помощник ставит телефон сбоку от вас так, чтобы в кадре был ваш профиль от макушки до плеч. Расстояние около 1,5 м, объектив на уровне вашей головы. Телефон стоит на штативе или на книгах, не в руках, вертикально и не завалившись на бок. Не двигайте его до конца замера.</li>
+      <li>Поза «Нейтраль»: смотрите на метку на стене, голова прямо. Нажмите «Записать» в строке «Нейтраль». Все 3 секунды не двигайтесь, и в это же время помощник снимает фото вашего профиля.</li>
+      <li>Позы: наклоняйте голову вперёд за счёт шеи (как кивок), спина остаётся прямой, плечи на месте, голову в сторону не поворачивайте. Первая поза — небольшой наклон, вторая — средний, третья — сильный. Угадывать градусы не нужно. Удерживайте позу, нажмите «Записать» в своей строке, помощник в эти 3 секунды снимает фото.</li>
+      <li>Загрузите фото: нажмите «Фото» в строке и выберите снимок. Затем на снимке нажмите сначала на козелок уха (выступ хряща перед ушным отверстием), потом на внешний уголок глаза. Приложение измерит угол этой линии к горизонту и вычтет угол из нейтрального фото — получится эталон.</li>
+      <li>Когда заполнены нейтраль и минимум 3 позы, ниже появится погрешность. Для большей точности добавьте ещё позы кнопкой «+ Поза».</li>
+    </ol>
+    <p class="note">Без помощника: запустите на телефоне таймер съёмки 10 секунд, нажмите «Записать» и займите позу до срабатывания затвора.</p>
+    <p id="mMsg" class="note" role="status"></p>
+  </div>
+  <div class="grid2">
+    <div class="card glass">
+      <h3>Позы</h3>
+      <table id="poseTable">
+        <thead><tr><th>Поза</th><th>Приложение</th><th>Фото</th><th>Эталон, °</th><th>Ошибка</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="row">
+        <button id="mAddPose" class="btn ghost small">+ Поза</button>
+        <button id="mResetPose" class="btn ghost small">Сбросить</button>
+      </div>
+    </div>
+    <div class="card glass">
+      <h3>Фото-угломер</h3>
+      <p id="photoHint" class="note">Нажмите «Фото» в строке таблицы.</p>
+      <canvas id="photoCanvas" width="640" height="480"></canvas>
+      <input id="photoFile" type="file" accept="image/*" hidden>
+      <div class="row"><button id="photoClear" class="btn ghost small">Сбросить точки</button></div>
+    </div>
+  </div>
+  <div class="card glass">
+    <h3>Итог по голове</h3>
+    <div id="headResult" class="note">Нужны нейтраль и минимум 3 позы с показаниями и эталоном.</div>
+    <div class="row">
+      <button id="mApplyCorr" class="btn small" disabled>Применить поправку</button>
+      <button id="mResetCorr" class="btn ghost small">Сбросить поправку</button>
+    </div>
+  </div>
+</section>
+
+<section id="mScreen">
+  <h2>2. Угол экрана</h2>
+  <div class="card glass">
+    <h3>2 минуты</h3>
+    <ol class="steps">
+      <li>Оставьте экран в рабочем положении. Калибровка выше должна быть сделана: по ней камера оценивает угол.</li>
+      <li>Приложите телефон плашмя к задней стенке экрана, ровно, без зазора, длинной стороной вдоль экрана.</li>
+      <li>Откройте «Уровень» и введите показание. Выберите, что он показывает: угол от вертикали (0° — экран стоит строго вертикально) или угол от стола (90° — вертикально).</li>
+      <li>Нажмите «Сравнить». Если хотите, чтобы основное приложение использовало ваше значение вместо оценки камеры — «Использовать моё значение».</li>
+    </ol>
+    <div class="row">
+      <label>Показание «Уровня», °<input id="lidLevel" type="number" step="0.5" min="0" max="180" placeholder="12"></label>
+      <label>Уровень показывает
+        <select id="lidMode">
+          <option value="vertical">Угол от вертикали</option>
+          <option value="table">Угол от стола</option>
+        </select>
+      </label>
+      <button id="lidCmp" class="btn small">Сравнить</button>
+      <button id="lidUse" class="btn ghost small">Использовать моё значение</button>
+      <button id="lidReset" class="btn ghost small">Сбросить</button>
+    </div>
+    <div id="lidResult" class="note"></div>
+  </div>
+</section>
+
+<section id="mDist">
+  <h2>3. Расстояние до экрана</h2>
+  <div class="card glass">
+    <h3>3 минуты</h3>
+    <ol class="steps">
+      <li>Сядьте как обычно и смотрите прямо на экран.</li>
+      <li>Помощник измеряет рулеткой расстояние от переносицы (точка между глазами) до камеры над экраном по прямой. Введите его в сантиметрах.</li>
+      <li>Нажмите «Записать» и 3 секунды не двигайтесь.</li>
+      <li>Повторите ещё на двух расстояниях: сдвиньте стул или ноутбук примерно на 15 см ближе и на 15 см дальше.</li>
+      <li>Когда есть 3 записи, нажмите «Применить»: приложение будет делать поправку расстояния.</li>
+    </ol>
+    <div class="row">
+      <label>Расстояние по рулетке, см<input id="distRef" type="number" step="1" min="20" max="150" placeholder="55"></label>
+      <button id="distRec" class="btn small">Записать</button>
+      <button id="distApply" class="btn ghost small" disabled>Применить</button>
+      <button id="distReset" class="btn ghost small">Сбросить</button>
+    </div>
+    <table id="distTable">
+      <thead><tr><th>Рулетка, см</th><th>Приложение, см</th><th>Ошибка</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div id="distResult" class="note"></div>
+  </div>
+</section>
+
+<section id="mReport">
+  <h2>Отчёт</h2>
+  <div class="card glass">
+    <pre id="reportText" class="report">Нажмите «Собрать отчёт».</pre>
+    <div class="row">
+      <button id="repBuild" class="btn small">Собрать отчёт</button>
+      <button id="repCopy" class="btn ghost small">Скопировать</button>
+      <button id="repCsv" class="btn ghost small">CSV</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ТЕСТ ============ -->
+<section id="experiment">
+  <h2>Тест</h2>
+  <div class="card glass">
+    <div class="row">
+      <label>Условие
+        <select id="expMode">
+          <option value="without">Без подставки</option>
+          <option value="with">С LookUp</option>
+        </select>
+      </label>
+      <label>Время
+        <select id="expDur">
+          <option value="30">30 сек</option>
+          <option value="60" selected>60 сек</option>
+          <option value="120">120 сек</option>
+        </select>
+      </label>
+      <button id="btnTest" class="btn" disabled>Начать</button>
+      <button id="btnCsv" class="btn ghost small">CSV</button>
+      <button id="btnClear" class="btn ghost small">Очистить</button>
+    </div>
+    <div class="progress" id="expProgress" hidden><div id="expBar"></div></div>
+    <p id="expHint" class="note">Сначала «Старт» в блоке «Контроль».</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card glass">
+      <h3>Время в норме</h3>
+      <div id="cmpChart" class="bars"></div>
+      <p id="cmpText" class="note"></p>
+    </div>
+    <div class="card glass">
+      <h3>Запуски</h3>
+      <table id="runsTable">
+        <thead><tr><th></th><th>Норма</th><th>Средн.</th><th>Макс.</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  LookUp · FIZTEX Hackathon · <a href="https://github.com/shensquared/PosturePal">PosturePal</a> (MIT) · Google MediaPipe
+</footer>
+
+<script type="module" src="../app.js"></script>
+<script type="module" src="../measure.js"></script>
+</body>
+</html>

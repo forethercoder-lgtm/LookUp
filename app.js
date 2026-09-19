@@ -71,7 +71,10 @@ const st = {
   nCam: null, nImu: null,           // нейтральные значения (после калибровки)
   signCam: 1, signImu: 1,           // +1: рост значения = наклон вниз
   signed: { cam: true, imu: true },
-  angle: null,
+  angle: null,         // угол с поправкой (его видят экран и сирена)
+  angleRaw: null,      // угол без поправки (нужен для замера точности)
+  distRaw: null,       // расстояние до экрана по зрачкам, см, без поправки
+  lidCam: null,        // угол экрана по камере (φ), без ручного значения
   usingImu: false,
   buf: [],             // окно для медианы
   lidEst: null,
@@ -105,6 +108,14 @@ const st = {
 };
 
 window.__lookup = st; // для отладки из консоли
+/* Поправки, которые пользователь получил в режиме «Замер» (/measure/) */
+const stored = (k) => { try { const v = parseFloat(localStorage.getItem(k)); return Number.isFinite(v) ? v : null; } catch { return null; } };
+const corr = () => {
+  try { const c = JSON.parse(localStorage.getItem("lookup.corr")); if (c && Number.isFinite(c.k) && Number.isFinite(c.b)) return c; } catch {}
+  return { k: 1, b: 0 };
+};
+const distK = () => stored("lookup.distK") ?? 1;      // коэффициент расстояния
+const lidManual = () => stored("lookup.lidManual");    // угол экрана φ, введённый вручную (по «Уровню»)
 const getLimit = () => Number($("setLimit").value) || 15;
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
 const hystHigh = (prev, v, enter, exit) => (prev ? v > exit : v > enter);
@@ -346,7 +357,7 @@ const setRunning = (on) => { $("btnStart").textContent = on ? "Стоп" : "Ст
 
 function resetSession() {
   st.sessTotal = 0; st.sessSafe = 0; st.badSince = null;
-  st.sitStart = performance.now(); st.angle = null; st.lastFrame = 0; st.buf = [];
+  st.sitStart = performance.now(); st.angle = null; st.angleRaw = null; st.lastFrame = 0; st.buf = [];
   st.lastFaceAt = performance.now(); st.sh = null; st.base = null; st.baseIpd = null; st.pts = null; st.det = null;
   st.hy = { head: false, slouch: false, lean: false, tilt: false, ipd: false };
   st.nCam = null; st.nImu = null;
@@ -404,7 +415,7 @@ function evalPrep(now, g, dt) {
     // расстояние до экрана по расстоянию между зрачками
     if (d.ipdPx && Math.abs(d.yaw) < 20) {
       const f = (g.W / 2) / Math.tan(HFOV_DEG * Math.PI / 360);
-      const cm = f * IPD_CM / d.ipdPx;
+      const cm = f * IPD_CM / d.ipdPx * distK();
       st.distSamples.push(cm);
       if (st.distSamples.length > 30) st.distSamples.shift();
     }
@@ -523,7 +534,13 @@ function detect(g, now) {
   if (m && lm) {
     let ipdPx = null;
     if (lm.length >= 478) ipdPx = Math.hypot((lm[468].x - lm[473].x) * g.W, (lm[468].y - lm[473].y) * g.H);
-    st.det = { pitch: pitchFromMatrix(m.data), yaw: yawFromMatrix(m.data), lm, ipdPx, ipdN: ipdPx ? ipdPx / g.W : null, at: now, W: g.W, H: g.H };
+    const yaw = yawFromMatrix(m.data);
+    st.det = { pitch: pitchFromMatrix(m.data), yaw, lm, ipdPx, ipdN: ipdPx ? ipdPx / g.W : null, at: now, W: g.W, H: g.H };
+    if (ipdPx && Math.abs(yaw) < 20) { // расстояние до экрана по зрачкам (нужна поправка distK)
+      const f = (g.W / 2) / Math.tan(HFOV_DEG * Math.PI / 360);
+      const cm = f * IPD_CM / ipdPx;
+      st.distRaw = st.distRaw === null ? cm : st.distRaw * 0.8 + cm * 0.2;
+    }
   } else st.det = null;
   if (st.pose && (st.poseSkip++ % 2 === 0)) {
     try { smoothShoulders(shoulderMetrics(st.pose.detectForVideo(g.img, now), now)); } catch (e) { console.warn(e); }
@@ -610,7 +627,9 @@ function handleSample({ cam, imu }, dt, now) {
   if (a === null) return;
   st.buf.push(a); if (st.buf.length > MEDIAN_N) st.buf.shift();
   const m = median(st.buf);
-  st.angle = st.angle === null ? m : st.angle + SMOOTH * (m - st.angle);
+  st.angleRaw = st.angleRaw === null ? m : st.angleRaw + SMOOTH * (m - st.angleRaw);
+  const c = corr();
+  st.angle = c.k * st.angleRaw + c.b; // поправка из режима «Замер»
 
   const limit = getLimit();
   st.hy.head = hystHigh(st.hy.head, st.angle, limit, limit - HYST);
@@ -1039,14 +1058,18 @@ function renderCalc() {
 function updateScreenAdvice() {
   const d = dev();
   const el = $("lidNow");
-  if (st.source !== "cam" || st.phase !== "monitoring" || st.nCam === null) return;
-  st.lidEst = Math.max(0, Math.min(45, -st.nCam * st.signCam));
+  if (st.phase !== "monitoring") return;
+  if (st.source === "cam" && st.nCam !== null) st.lidCam = Math.max(0, Math.min(45, -st.nCam * st.signCam));
+  const manual = lidManual();
+  const est = manual ?? st.lidCam;
+  if (est === null || est === undefined) return;
+  st.lidEst = Math.max(0, Math.min(45, est));
   const cur = screenDeg(st.lidEst);
   const need = screenDeg(solveTilt(Math.max(0, Number($("cH").value) || 0)).phi);
   const diff = need - cur;
   const ok = Math.abs(diff) < 5;
   const arrow = diff > 0 ? "↑ +" + diff + "°" : "↓ −" + Math.abs(diff) + "°";
-    el.innerHTML = `По камере: ${d.lid ? "крышка" : "монитор"} ≈ <b>${cur}°</b> → нужно <b>${need}°</b> ${ok ? "✓" : arrow}`;
+  el.innerHTML = `${manual !== null ? "Вы ввели" : "По камере"}: ${d.lid ? "крышка" : "монитор"} ≈ <b>${cur}°</b> → нужно <b>${need}°</b> ${ok ? "✓" : arrow}`;
   setChip("chipScreen", ok ? "ok" : "warn", `Экран ${cur}° → ${need}° ${ok ? "✓" : arrow}`);
 }
 
@@ -1105,7 +1128,7 @@ $("btnPip").onclick = togglePip;
 $("btnSkip").onclick = () => { if (st.phase === "prepare") endPrepare(); };
 $("btnDemo").onclick = startDemo;
 $("btnCalib").onclick = beginCalibration;
-$("btnInvert").onclick = () => { st.signCam *= -1; st.signImu *= -1; st.angle = null; st.buf = []; updateScreenAdvice(); };
+$("btnInvert").onclick = () => { st.signCam *= -1; st.signImu *= -1; st.angle = null; st.angleRaw = null; st.buf = []; updateScreenAdvice(); };
 $("btnTest").onclick = startTest;
 $("btnCsv").onclick = downloadCsv;
 $("btnClear").onclick = () => { if (confirm("Удалить все сохранённые запуски?")) { saveRuns([]); renderRuns(); } };

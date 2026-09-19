@@ -8,7 +8,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Crect width=%2224%22 height=%2224%22 rx=%226%22 fill=%22%230a0a0b%22/%3E%3Cpath d=%22M12 17V7M7.5 11.5 12 7l4.5 4.5%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
 <link rel="stylesheet" href="../style.css">
 </head>
-<body>
+<body class="{{BODYCLASS}}">
 
 <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
 
@@ -18,10 +18,7 @@
     LookUp <em class="badge">{{BADGE}}</em>
   </a>
   <nav>
-    <a href="#setup">Экран</a>
-    <a href="#live">Контроль</a>
-    <a href="#experiment">Тест</a>
-    <a href="../">Система</a>
+    {{NAV}}
   </nav>
 </header>
 
@@ -80,6 +77,7 @@
   </div>
 </section>
 
+{{PRE_LIVE}}
 <!-- ============ КОНТРОЛЬ ============ -->
 <section id="live">
   <h2>Контроль</h2>
@@ -149,6 +147,7 @@
   </div>
 </section>
 
+{{POST_LIVE}}
 <!-- ============ ТЕСТ ============ -->
 <section id="experiment">
   <h2>Тест</h2>
@@ -198,5 +197,6 @@
 </footer>
 
 <script type="module" src="../app.js"></script>
+{{EXTRA_SCRIPT}}
 </body>
 </html>
