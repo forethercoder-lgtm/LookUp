@@ -1,7 +1,11 @@
 import { FaceLandmarker, PoseLandmarker, FilesetResolver } from "./vendor/vision_bundle.mjs";
+import { figure } from "./figure.js";
 
 const $ = (id) => document.getElementById(id);
 const SVGNS = "http://www.w3.org/2000/svg";
+const ROOT = new URL("./", import.meta.url).href; // работает и из /mac/, и из /windows/
+const PLATFORM = document.documentElement.dataset.platform === "windows" ? "windows" : "mac";
+
 const GAUGE_MAX = 60;          // градусов на шкале
 const CALIB_MS = 3000;         // калибровка: смотрим вдаль
 const NOD_MIN = 8;             // кивок вниз минимум на столько градусов
@@ -12,13 +16,29 @@ const TICK_MS = 100;           // 10 кадров/сек
 const FACE_LOST_MS = 1500;     // нет лица дольше — сирена выключается
 const SLOUCH_RATIO = 0.8;      // голова опустилась к плечам (доля от калибровки)
 const LEAN_RATIO = 1.3;        // плечи стали шире в кадре — наклон к экрану
-const TILT_MAX = 12;           // перекос плеч, °
+const TILT_MAX = 12;           // перекос ключиц/плеч, °
 const SHOULDER_STALE_MS = 1500;
 
-/* Допущения калькулятора: пользователь вводит только высоту платформы */
-const EYE_H = 45;    // высота глаз над столом, см
-const EYE_DIST = 55; // расстояние глаз → петля, см
-const PANEL = 20;    // высота дисплея MacBook, см (Air 19 · Pro 14″ 20 · Pro 16″ 22,5)
+const COLORS = { ok: "#1fb86a", warn: "#f5a524", bad: "#f0483e", idle: "#12203f" };
+
+/* ------------------------------------------------------------------ */
+/* Устройства. Пользователь вводит только высоту платформы, остальное  */
+/* — типичные значения. lid: true → угол раскрытия крышки (90° + φ),   */
+/* иначе — наклон монитора назад φ.                                    */
+/* ------------------------------------------------------------------ */
+const EYE_H = 45; // высота глаз над столом, см
+const DEVICES = {
+  mac: {
+    laptop: { lid: true, panel: 20, bezel: 1.2, baseH: 1.5, baseD: 22, dist: 55, maxPhi: 45, label: "💻 Крышка" },
+  },
+  windows: {
+    laptop: { lid: true, panel: 19, bezel: 1.5, baseH: 2.0, baseD: 25, dist: 55, maxPhi: 45, label: "💻 Крышка" },
+    monitor: { lid: false, panel: 34, bezel: 2, baseH: 6, baseD: 22, dist: 65, maxPhi: 20, label: "🖥 Наклон" },
+  },
+};
+let mode = "laptop";
+try { if (PLATFORM === "windows" && DEVICES.windows[localStorage.getItem("lookup.mode")]) mode = localStorage.getItem("lookup.mode"); } catch {}
+const dev = () => DEVICES[PLATFORM][mode];
 
 const st = {
   source: null,        // "cam" | "sim" | null
@@ -29,11 +49,10 @@ const st = {
   neutral: 0,
   sign: 1,             // +1: рост raw pitch = наклон вниз
   angle: null,
-  lidEst: null,        // оценка φ (наклон крышки от вертикали) по камере
+  lidEst: null,        // оценка φ (наклон экрана от вертикали) по камере
   lastFrame: 0,
   lastFaceAt: 0,
   lastVideoTime: -1,
-  poseFlip: false,
   badSince: null,
   alerting: false,
   startedAt: 0,
@@ -44,7 +63,9 @@ const st = {
   calibStart: 0,
   nodStart: 0,
   base: null,          // калибровка плеч {head, w}
-  sh: null,            // текущие плечи {head, w, roll, at}
+  sh: null,            // сглаженные метрики плеч
+  pts: null,           // сырые точки {ls, rs, nose, at} для отрисовки ключиц
+  shState: null,
   sessTotal: 0,
   sessSafe: 0,
   sitStart: 0,
@@ -86,7 +107,7 @@ function sirenSet(on) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Голова: pitch из матрицы позы лица (глаза/лицо)                     */
+/* Голова: pitch из матрицы позы лица                                  */
 /* ------------------------------------------------------------------ */
 // data — column-major 4x4; столбец 2 = направление «вперёд» лица.
 // Знак уточняется кивком при калибровке, поэтому здесь он условный.
@@ -96,15 +117,18 @@ function pitchFromMatrix(data) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Плечи: сутулость и перекос по MediaPipe Pose                        */
+/* Ключицы и плечи (MediaPipe Pose)                                    */
+/* В Pose нет отдельных точек ключиц, поэтому линия ключиц — это       */
+/* плечи + основание шеи между ними; наклон линии = перекос.           */
 /* ------------------------------------------------------------------ */
 function shoulderMetrics(res, now) {
   const p = res.landmarks?.[0];
-  if (!p) return null;
+  if (!p) { st.pts = null; return null; }
   const nose = p[0], ls = p[11], rs = p[12];
-  if ((ls.visibility ?? 1) < 0.5 || (rs.visibility ?? 1) < 0.5) return null;
+  if ((ls.visibility ?? 1) < 0.5 || (rs.visibility ?? 1) < 0.5) { st.pts = null; return null; }
   const w = Math.hypot(ls.x - rs.x, ls.y - rs.y);
-  if (w < 0.05) return null;
+  if (w < 0.05) { st.pts = null; return null; }
+  st.pts = { ls, rs, nose, at: now };
   const head = ((ls.y + rs.y) / 2 - nose.y) / w; // выше плеч = больше (идея PosturePal)
   let roll = Math.abs(Math.atan2(ls.y - rs.y, ls.x - rs.x) * 180 / Math.PI);
   if (roll > 90) roll = 180 - roll;
@@ -113,7 +137,7 @@ function shoulderMetrics(res, now) {
 
 function smoothShoulders(m) {
   if (!m) return;
-  const o = st.sh && st.sh.at ? st.sh : null;
+  const o = st.sh;
   const k = 0.3;
   st.sh = o ? {
     head: o.head + k * (m.head - o.head),
@@ -145,11 +169,11 @@ async function createWithFallback(Cls, fileset, model, extra) {
 
 async function initModels() {
   if (st.face) return;
-  const fileset = await FilesetResolver.forVisionTasks("./vendor/wasm");
-  st.face = await createWithFallback(FaceLandmarker, fileset, "./models/face_landmarker.task",
+  const fileset = await FilesetResolver.forVisionTasks(ROOT + "vendor/wasm");
+  st.face = await createWithFallback(FaceLandmarker, fileset, ROOT + "models/face_landmarker.task",
     { numFaces: 1, outputFacialTransformationMatrixes: true });
   try {
-    st.pose = await createWithFallback(PoseLandmarker, fileset, "./models/pose_landmarker_lite.task", { numPoses: 1 });
+    st.pose = await createWithFallback(PoseLandmarker, fileset, ROOT + "models/pose_landmarker_lite.task", { numPoses: 1 });
   } catch (e) {
     console.warn("Плечи недоступны", e);
     st.pose = null;
@@ -160,7 +184,7 @@ async function startCamera() {
   stopAll();
   sirenInit(); // AudioContext можно создать только из клика
   st.startedAt = performance.now();
-  setPhase("loading", "Загружаю модель и камеру…");
+  setPhase("loading", "⏳ Загрузка…");
   $("btnStart").disabled = true;
   try {
     await initModels();
@@ -177,7 +201,8 @@ async function startCamera() {
     setRunning(true);
   } catch (e) {
     console.error(e);
-    setPhase("idle", "Камера не запустилась: " + (e.message || e));
+    setPhase("idle", "📷 Камера не запустилась");
+    $("stageMsg").title = String(e.message || e);
     st.source = null;
   }
   $("btnStart").disabled = false;
@@ -203,6 +228,7 @@ function stopAll() {
   st.source = null;
   st.test = null;
   st.phase = "idle";
+  st.pts = null;
   $("video").srcObject = null;
   $("simBox").hidden = true;
   $("btnCalib").disabled = true;
@@ -211,8 +237,10 @@ function stopAll() {
   clearAlert();
   document.querySelector(".stage").className = "stage glass";
   $("angleNum").textContent = "—";
-  setChip("chipHead", "", "Голова —");
-  setChip("chipSh", "", "Плечи —");
+  $("liveFig").innerHTML = figure(0, COLORS.idle, getLimit());
+  setChip("chipHead", "", "Голова");
+  setChip("chipSh", "", "Плечи");
+  setChip("chipScreen", "", "Экран");
   setStatus("idle", "Ожидание");
   setRunning(false);
 }
@@ -222,7 +250,7 @@ const setRunning = (on) => { $("btnStart").textContent = on ? "■ Стоп" : "
 function resetSession() {
   st.sessTotal = 0; st.sessSafe = 0; st.badSince = null;
   st.sitStart = performance.now(); st.angle = null; st.lastFrame = 0;
-  st.lastFaceAt = performance.now(); st.sh = null; st.base = null;
+  st.lastFaceAt = performance.now(); st.sh = null; st.base = null; st.pts = null;
   clearAlert();
 }
 
@@ -248,7 +276,7 @@ function beginCalibration() {
   st.base = null;
   $("btnCalib").disabled = true;
   clearAlert();
-  msg("Сядьте прямо и смотрите вдаль");
+  msg("👀 Смотрите вдаль");
 }
 
 function beginNod() {
@@ -256,7 +284,7 @@ function beginNod() {
   st.base = st.calibHead.length >= 5 ? { head: median(st.calibHead), w: median(st.calibW) } : null;
   st.phase = "nod";
   st.nodStart = 0;
-  msg("Теперь кивните вниз");
+  msg("🙇 Кивните вниз");
 }
 
 function finishCalibration() {
@@ -267,9 +295,9 @@ function finishCalibration() {
     (setup < 30 ? '<span class="pass">✓</span>' : '<span class="fail">✗</span>');
   $("btnCalib").disabled = false;
   $("btnTest").disabled = false;
-  $("expHint").textContent = st.source === "sim" ? "Демо: результаты не сохраняются." : "Готово. Работайте как обычно.";
-  updateLidEstimate();
-  msg("Готово");
+  $("expHint").textContent = st.source === "sim" ? "Демо: результаты не сохраняются." : "Готово — работайте как обычно.";
+  updateScreenAdvice();
+  msg("✅ Готово");
 }
 
 function msg(text) {
@@ -312,9 +340,10 @@ function tick(now) {
     handleSample(raw, dt, now);
   } else if (st.source === "cam" && now - st.lastFaceAt > FACE_LOST_MS) {
     clearAlert();
-    setStatus("idle", "Лица не видно");
+    setStatus("idle", "🙈 Лица не видно");
   }
-  drawOverlay(landmarks);
+  st.shState = st.phase === "monitoring" ? shoulderState(now) : null;
+  drawOverlay(landmarks, now);
   updateSitTimer(now);
 }
 
@@ -334,7 +363,7 @@ function handleSample(raw, dt, now) {
       finishCalibration();
     } else if (now - st.nodStart > NOD_TIMEOUT_MS) {
       finishCalibration(); // знак остаётся прежним
-      msg("Кивок не замечен — знак по умолчанию");
+      msg("🤷 Кивок не замечен");
     }
     return;
   }
@@ -347,15 +376,15 @@ function handleSample(raw, dt, now) {
   const headBad = st.angle > limit;
   const sh = shoulderState(now);
   const bad = headBad || sh === "slouch" || sh === "tilt";
-  const reason = headBad ? "Поднимите голову!" : sh === "slouch" ? "Выпрямите спину!" : "Выровняйте плечи!";
+  const reason = headBad ? "⬆ Голову выше!" : sh === "slouch" ? "🧍 Выпрямитесь!" : "↔ Ровнее плечи!";
 
   st.sessTotal += dt;
   if (!bad) st.sessSafe += dt;
 
   updateGauge(st.angle, limit);
-  setChip("chipHead", headBad ? "bad" : "ok", headBad ? "Голова: наклон" : "Голова: ок");
-  const shText = { ok: ["ok", "Плечи: ок"], slouch: ["bad", "Плечи: сутулость"], tilt: ["warn", "Плечи: перекос"] }[sh] || ["", "Плечи —"];
-  setChip("chipSh", shText[0], shText[1]);
+  setChip("chipHead", headBad ? "bad" : "ok", headBad ? "⚠ Голова" : "🙂 Голова");
+  const shChip = { ok: ["ok", "🙂 Плечи"], slouch: ["bad", "⚠ Сутулость"], tilt: ["warn", "⚠ Перекос"] }[sh] || ["", "Плечи"];
+  setChip("chipSh", shChip[0], shChip[1]);
   updateAlert(bad, reason, now);
   updateTest(bad, st.angle, dt);
   $("sessSafe").textContent = st.sessTotal > 1 ? Math.round(100 * st.sessSafe / st.sessTotal) + " %" : "—";
@@ -396,7 +425,7 @@ function setChip(id, cls, text) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Спидометр                                                           */
+/* Спидометр и живая фигурка                                           */
 /* ------------------------------------------------------------------ */
 function polar(cx, cy, r, deg) { // deg: 0 = слева, 180 = справа
   const a = Math.PI - (deg * Math.PI / 180);
@@ -417,9 +446,9 @@ function buildGauge(limit) {
   g.innerHTML = "";
   const cx = 120, cy = 128, r = 92;
   const d = (deg) => Math.min(180, deg / GAUGE_MAX * 180);
-  const zones = [[0, limit, "#1fb86a"], [limit, limit * 2, "#f5a524"], [limit * 2, GAUGE_MAX, "#f0483e"]];
+  const zones = [[0, limit, COLORS.ok], [limit, limit * 2, COLORS.warn], [limit * 2, GAUGE_MAX, COLORS.bad]];
   for (const [a, b, c] of zones) {
-    svgEl("path", { d: arcPath(cx, cy, r, d(a), d(b)), stroke: c, "stroke-width": 16, fill: "none", "stroke-linecap": "butt" }, g);
+    svgEl("path", { d: arcPath(cx, cy, r, d(a), d(b)), stroke: c, "stroke-width": 16, fill: "none" }, g);
   }
   svgEl("line", { id: "needle", x1: cx, y1: cy, stroke: "#12203f", "stroke-width": 4, "stroke-linecap": "round" }, g);
   svgEl("circle", { cx, cy, r: 7, fill: "#12203f" }, g);
@@ -442,7 +471,8 @@ function updateGauge(angle, limit) {
   setNeedle(angle);
   $("angleNum").textContent = Math.round(angle);
   const zone = angle <= limit ? "ok" : angle <= limit * 2 ? "warn" : "bad";
-  setStatus(zone, { ok: "Безопасный наклон", warn: "Наклон растёт", bad: "Опасный наклон" }[zone]);
+  $("liveFig").innerHTML = figure(angle, COLORS[zone], limit);
+  setStatus(zone, { ok: "🙂 В норме", warn: "😬 Наклон растёт", bad: "😣 Опасно" }[zone]);
   document.querySelector(".stage").className = "stage glass " + zone;
 }
 function setStatus(cls, text) {
@@ -453,21 +483,39 @@ function setStatus(cls, text) {
 function setPhase(phase, text) { st.phase = phase; msg(text); }
 
 /* ------------------------------------------------------------------ */
-/* Оверлей: линия «лоб — подбородок»                                   */
+/* Оверлей: лоб–подбородок + ключицы («V» от основания шеи к плечам)   */
 /* ------------------------------------------------------------------ */
-function drawOverlay(lm) {
+function drawOverlay(lm, now) {
   const c = $("overlay"), v = $("video");
-  const w = v.videoWidth || 640, h = v.videoHeight || 480;
-  if (c.width !== w) { c.width = w; c.height = h; }
+  const W = v.videoWidth || 640, H = v.videoHeight || 480;
+  if (c.width !== W) { c.width = W; c.height = H; }
   const ctx = c.getContext("2d");
-  ctx.clearRect(0, 0, w, h);
-  if (!lm) return;
-  const pt = (i) => [lm[i].x * w, lm[i].y * h];
-  const pts = [pt(10), pt(1), pt(152)];
-  ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(...pts[0]); ctx.lineTo(...pts[2]); ctx.stroke();
-  ctx.fillStyle = "#fff";
-  for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); }
+  ctx.clearRect(0, 0, W, H);
+  ctx.lineCap = "round";
+
+  if (lm) {
+    const pt = (i) => [lm[i].x * W, lm[i].y * H];
+    const pts = [pt(10), pt(1), pt(152)];
+    ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(...pts[0]); ctx.lineTo(...pts[2]); ctx.stroke();
+    ctx.fillStyle = "#fff";
+    for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill(); }
+  }
+
+  const p = st.pts;
+  if (p && now - p.at < SHOULDER_STALE_MS) {
+    const ls = [p.ls.x * W, p.ls.y * H], rs = [p.rs.x * W, p.rs.y * H];
+    const wPx = Math.hypot(ls[0] - rs[0], ls[1] - rs[1]);
+    const notch = [(ls[0] + rs[0]) / 2, (ls[1] + rs[1]) / 2 + 0.08 * wPx]; // основание шеи
+    const color = { ok: COLORS.ok, slouch: COLORS.bad, tilt: COLORS.warn }[st.shState] || "#fff";
+    ctx.strokeStyle = color; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(...ls); ctx.lineTo(...notch); ctx.lineTo(...rs); ctx.stroke();
+    ctx.setLineDash([5, 6]); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(...notch); ctx.lineTo(p.nose.x * W, p.nose.y * H); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    for (const [x, y] of [ls, rs, notch]) { ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill(); }
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -482,7 +530,7 @@ function startTest() {
   st.test = { dur: Number($("expDur").value), t: 0, safe: 0, sum: 0, max: 0, mode: $("expMode").value, limit: getLimit() };
   $("btnTest").disabled = true;
   $("expProgress").hidden = false;
-  $("expHint").textContent = "Идёт тест — работайте как обычно…";
+  $("expHint").textContent = "⏳ Идёт тест…";
 }
 
 function updateTest(bad, angle, dt) {
@@ -501,14 +549,14 @@ function finishTest() {
   $("btnTest").disabled = false;
   $("expProgress").hidden = true;
   const run = {
-    ts: Date.now(), mode: t.mode, dur: t.dur, limit: t.limit,
+    ts: Date.now(), mode: t.mode, dur: t.dur, limit: t.limit, platform: PLATFORM,
     safeRatio: t.safe / t.t, mean: t.sum / t.t, max: t.max, setup: st.lastSetup,
   };
   if (st.source === "cam") {
     const runs = loadRuns(); runs.push(run); saveRuns(runs);
-    $("expHint").textContent = "Тест сохранён.";
+    $("expHint").textContent = "💾 Сохранено";
   } else {
-    $("expHint").textContent = `Демо: ${Math.round(run.safeRatio * 100)} % в норме (не сохранено).`;
+    $("expHint").textContent = `Демо: ${Math.round(run.safeRatio * 100)} % (не сохранено)`;
   }
   renderRuns();
 }
@@ -520,33 +568,33 @@ function renderRuns() {
   for (const r of runs.slice().reverse()) {
     const ok = r.safeRatio >= PASS_RATIO;
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${r.mode === "with" ? "С LookUp" : "Без"}</td>
+    tr.innerHTML = `<td>${r.mode === "with" ? "✨ С" : "Без"}</td>
       <td>${Math.round(r.safeRatio * 100)} %</td><td>${r.mean.toFixed(1)}°</td><td>${r.max.toFixed(0)}°</td>
       <td class="${ok ? "pass" : "fail"}">${ok ? "✓" : "✗"}</td>`;
     tb.appendChild(tr);
   }
-  const avg = (mode) => {
-    const xs = runs.filter((r) => r.mode === mode).map((r) => r.safeRatio);
+  const avg = (m) => {
+    const xs = runs.filter((r) => r.mode === m).map((r) => r.safeRatio);
     return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
   };
   const a = avg("without"), b = avg("with");
   const chart = $("cmpChart");
   chart.innerHTML = "";
-  for (const [label, v, color] of [["Без", a, "linear-gradient(180deg,#ff8a80,#f0483e)"], ["С LookUp", b, "linear-gradient(180deg,#5ee0a0,#1fb86a)"]]) {
+  for (const [label, v, color] of [["Без", a, "linear-gradient(180deg,#ff8a80,#f0483e)"], ["✨ С LookUp", b, "linear-gradient(180deg,#5ee0a0,#1fb86a)"]]) {
     const d = document.createElement("div");
     d.className = "bar";
     d.innerHTML = `<b>${v === null ? "—" : Math.round(v * 100) + " %"}</b><i style="height:${v === null ? 0 : v * 150}px;background:${color}"></i><em>${label}</em>`;
     chart.appendChild(d);
   }
   $("cmpText").textContent = a !== null && b !== null
-    ? `С LookUp время в норме ${b >= a ? "выросло" : "снизилось"} на ${Math.abs(Math.round((b - a) * 100))} п.п.`
-    : "Сделайте по одному тесту в каждом условии.";
+    ? `${b >= a ? "▲" : "▼"} ${Math.abs(Math.round((b - a) * 100))} п.п.`
+    : "Нужно по одному тесту «без» и «с».";
 }
 
 function downloadCsv() {
-  const rows = [["timestamp", "condition", "duration_s", "limit_deg", "ok_ratio", "mean_deg", "max_deg", "setup_s"]];
+  const rows = [["timestamp", "platform", "condition", "duration_s", "limit_deg", "ok_ratio", "mean_deg", "max_deg", "setup_s"]];
   for (const r of loadRuns()) {
-    rows.push([new Date(r.ts).toISOString(), r.mode, r.dur, r.limit, r.safeRatio.toFixed(3), r.mean.toFixed(2), r.max.toFixed(1), r.setup?.toFixed(1) ?? ""]);
+    rows.push([new Date(r.ts).toISOString(), r.platform ?? "", r.mode, r.dur, r.limit, r.safeRatio.toFixed(3), r.mean.toFixed(2), r.max.toFixed(1), r.setup?.toFixed(1) ?? ""]);
   }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([rows.map((r) => r.join(",")).join("\n")], { type: "text/csv" }));
@@ -555,43 +603,41 @@ function downloadCsv() {
 }
 
 /* ------------------------------------------------------------------ */
-/* График нагрузки на шею                                              */
+/* График нагрузки на шею: фигурки вместо подписей                     */
 /* ------------------------------------------------------------------ */
 function renderLoadChart() {
   const data = [[0, 5], [15, 12], [30, 18], [45, 22], [60, 27]]; // Hansen 2014
   const el = $("loadChart");
   el.innerHTML = "";
   for (const [deg, kg] of data) {
-    const color = deg <= 15 ? "linear-gradient(180deg,#5ee0a0,#1fb86a)" : deg <= 30 ? "linear-gradient(180deg,#ffd166,#f5a524)" : "linear-gradient(180deg,#ff8a80,#f0483e)";
+    const zone = deg <= 15 ? "ok" : deg <= 30 ? "warn" : "bad";
+    const grad = { ok: "linear-gradient(180deg,#5ee0a0,#1fb86a)", warn: "linear-gradient(180deg,#ffd166,#f5a524)", bad: "linear-gradient(180deg,#ff8a80,#f0483e)" }[zone];
     const d = document.createElement("div");
     d.className = "bar";
-    d.innerHTML = `<b>${kg}</b><i style="height:${kg / 27 * 150}px;background:${color}"></i><em>${deg}°</em>`;
+    d.innerHTML = `<b>${kg}</b><i style="height:${kg / 27 * 130}px;background:${grad}"></i>${figure(deg, COLORS[zone])}<em>${deg}°</em>`;
     el.appendChild(d);
   }
 }
 
 /* ------------------------------------------------------------------ */
-/* Калькулятор: высота платформы → угол крышки                         */
+/* Калькулятор: высота платформы → угол экрана                         */
 /* ------------------------------------------------------------------ */
-const BEZEL = 1.2;   // рамка под дисплеем, см
-const BASE_H = 1.5;  // высота корпуса над платформой у петли, см
-const BASE_D = 22;   // глубина корпуса (для схемы), см
-
-/* Экран ставится перпендикулярно линии взгляда на его центр: φ (наклон крышки
-   от вертикали) = угол взгляда вниз. Центр экрана зависит от φ — считаем
-   итерациями. */
+/* Экран ставится перпендикулярно линии взгляда на его центр: φ (наклон
+   назад от вертикали) = угол взгляда вниз. Центр экрана зависит от φ —
+   считаем итерациями. У монитора φ ограничен (maxPhi). */
 function solveTilt(H) {
-  const off = BEZEL + PANEL / 2;
+  const d = dev();
+  const off = d.bezel + d.panel / 2;
   let phi = 0, alpha = 0;
   for (let i = 0; i < 30; i++) {
     const r = phi * Math.PI / 180;
-    const cy = H + BASE_H + off * Math.cos(r);
-    const dc = EYE_DIST + off * Math.sin(r);
+    const cy = H + d.baseH + off * Math.cos(r);
+    const dc = d.dist + off * Math.sin(r);
     alpha = Math.atan2(EYE_H - cy, dc) * 180 / Math.PI; // >0: смотрим вниз
-    phi = Math.max(0, Math.min(45, alpha));
+    phi = Math.max(0, Math.min(d.maxPhi, alpha));
   }
   const r = phi * Math.PI / 180;
-  return { phi, alpha, top: H + BASE_H + (BEZEL + PANEL) * Math.cos(r) };
+  return { phi, alpha, top: H + d.baseH + (d.bezel + d.panel) * Math.cos(r) };
 }
 
 function bestHeight() { // максимальная высота, при которой верх экрана не выше глаз
@@ -600,55 +646,85 @@ function bestHeight() { // максимальная высота, при кот�
   return best;
 }
 
+const screenDeg = (phi) => Math.round(dev().lid ? 90 + phi : phi);
+
 function renderCalc() {
+  const d = dev();
   const H = Math.max(0, Number($("cH").value) || 0);
   const L = getLimit();
   const s = solveTilt(H);
-  $("rLid").textContent = Math.round(90 + s.phi) + "°";
+  $("rLabel").textContent = d.label;
+  $("rLid").textContent = screenDeg(s.phi) + "°";
   $("rAlpha").textContent = Math.round(Math.max(0, s.alpha)) + "°";
+  const zone = s.alpha <= L ? "ok" : "bad";
+  $("calcFig").innerHTML = figure(Math.max(0, s.alpha), COLORS[s.alpha < 0 ? "warn" : zone], L);
   const v = $("rVerdict");
-  if (s.alpha < 0) { v.className = "status warn"; v.textContent = "Слишком высоко"; }
-  else if (s.alpha <= L) { v.className = "status ok"; v.textContent = "В норме"; }
-  else { v.className = "status bad"; v.textContent = "Слишком низко"; }
+  if (s.alpha < 0) { v.className = "status warn"; v.textContent = "⬇ Слишком высоко"; }
+  else if (s.alpha <= L) { v.className = "status ok"; v.textContent = "🙂 В норме"; }
+  else { v.className = "status bad"; v.textContent = "⬆ Поднимите платформу"; }
   drawCalcSvg(H, s, L);
-  updateLidEstimate();
+  updateScreenAdvice();
 }
 
-/* Угол крышки по камере: если человек смотрит вдаль головой прямо, то камера в
-   крышке видит лицо повёрнутым на угол наклона крышки. Оценка приблизительная. */
-function updateLidEstimate() {
+/* Угол экрана по камере: если смотреть вдаль головой прямо, камера в экране
+   видит лицо повёрнутым на угол наклона экрана. Оценка приблизительная. */
+function updateScreenAdvice() {
+  const d = dev();
   const el = $("lidNow");
   if (st.source !== "cam" || st.phase !== "monitoring") return;
   st.lidEst = Math.max(0, Math.min(45, -st.neutral * st.sign));
-  const now = Math.round(90 + st.lidEst);
-  const need = Math.round(90 + solveTilt(Math.max(0, Number($("cH").value) || 0)).phi);
-  const diff = need - now;
-  el.innerHTML = `По камере крышка ≈ <b>${now}°</b>, нужно <b>${need}°</b>` +
-    (Math.abs(diff) >= 5 ? ` — ${diff > 0 ? "откройте" : "прикройте"} на ${Math.abs(diff)}°` : " ✓");
+  const cur = screenDeg(st.lidEst);
+  const need = screenDeg(solveTilt(Math.max(0, Number($("cH").value) || 0)).phi);
+  const diff = need - cur;
+  const ok = Math.abs(diff) < 5;
+  const arrow = diff > 0 ? "⤴ +" + diff + "°" : "⤵ −" + Math.abs(diff) + "°";
+  const icon = d.lid ? "💻" : "🖥";
+  el.innerHTML = `📷 ${icon} сейчас ≈ <b>${cur}°</b> → нужно <b>${need}°</b> ${ok ? "✓" : arrow}`;
+  setChip("chipScreen", ok ? "ok" : "warn", `${icon} ${cur}° → ${need}° ${ok ? "✓" : arrow}`);
 }
 
 function drawCalcSvg(H, s, L) {
+  const d = dev();
   const W = 480, HT = 280, pad = 16;
-  const xMax = EYE_DIST + 32, yMax = Math.max(EYE_H, s.top) + 8;
+  const xMax = d.dist + 32, yMax = Math.max(EYE_H, s.top) + 8;
   const k = Math.min((W - 2 * pad) / xMax, (HT - 2 * pad) / yMax);
   const X = (x) => pad + x * k, Y = (y) => HT - pad - y * k;
   const r = s.phi * Math.PI / 180;
-  const lidLen = BEZEL + PANEL + 1;
-  const hx = EYE_DIST, hy = H + BASE_H;
+  const lidLen = d.bezel + d.panel + 1;
+  const hx = d.dist, hy = H + d.baseH;
   const tx = hx + lidLen * Math.sin(r), ty = hy + lidLen * Math.cos(r);
-  const cxs = hx + (BEZEL + PANEL / 2) * Math.sin(r), cys = hy + (BEZEL + PANEL / 2) * Math.cos(r);
-  const cone = [X(EYE_DIST + 30), Y(EYE_H - (EYE_DIST + 30) * Math.tan(L * Math.PI / 180))];
+  const cxs = hx + (d.bezel + d.panel / 2) * Math.sin(r), cys = hy + (d.bezel + d.panel / 2) * Math.cos(r);
+  const cone = [X(d.dist + 30), Y(EYE_H - (d.dist + 30) * Math.tan(L * Math.PI / 180))];
   const good = s.alpha <= L;
   $("calcSvg").innerHTML = `
     <line x1="${X(-4)}" y1="${Y(0)}" x2="${X(xMax)}" y2="${Y(0)}" stroke="#7c8bb3" stroke-width="3" stroke-linecap="round"/>
-    <rect x="${X(EYE_DIST - BASE_D)}" y="${Y(H)}" width="${(BASE_D + 2) * k}" height="${Math.max(1, H * k)}" rx="4" fill="#7c8bb3" opacity=".45"/>
-    <rect x="${X(EYE_DIST - BASE_D)}" y="${Y(H + BASE_H)}" width="${BASE_D * k}" height="${BASE_H * k}" rx="2" fill="#fff" stroke="#9aa8cc"/>
+    <rect x="${X(d.dist - d.baseD)}" y="${Y(H)}" width="${(d.baseD + 2) * k}" height="${Math.max(1, H * k)}" rx="4" fill="#7c8bb3" opacity=".45"/>
+    <rect x="${X(d.dist - d.baseD)}" y="${Y(H + d.baseH)}" width="${d.baseD * k}" height="${d.baseH * k}" rx="2" fill="#fff" stroke="#9aa8cc"/>
     <line x1="${X(hx)}" y1="${Y(hy)}" x2="${X(tx)}" y2="${Y(ty)}" stroke="#12203f" stroke-width="5" stroke-linecap="round"/>
-    <line x1="${X(0)}" y1="${Y(EYE_H)}" x2="${X(EYE_DIST + 30)}" y2="${Y(EYE_H)}" stroke="#9aa8cc" stroke-dasharray="3 5"/>
+    <line x1="${X(0)}" y1="${Y(EYE_H)}" x2="${X(d.dist + 30)}" y2="${Y(EYE_H)}" stroke="#9aa8cc" stroke-dasharray="3 5"/>
     <line x1="${X(0)}" y1="${Y(EYE_H)}" x2="${cone[0]}" y2="${cone[1]}" stroke="#1fb86a" stroke-dasharray="6 4" opacity=".7"/>
     <line x1="${X(0)}" y1="${Y(EYE_H)}" x2="${X(cxs)}" y2="${Y(cys)}" stroke="${good ? "#1fb86a" : "#f0483e"}" stroke-width="3" stroke-linecap="round"/>
     <circle cx="${X(0)}" cy="${Y(EYE_H)}" r="8" fill="#12203f"/>
-    <text x="${X(EYE_DIST - BASE_D) + 6}" y="${Y(0) - 6}" fill="#5a6a90" font-size="12">${H} см</text>`;
+    <text x="${X(d.dist - d.baseD) + 6}" y="${Y(0) - 6}" fill="#5a6a90" font-size="12">${H} см</text>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Режим устройства (только Windows: ноутбук / монитор)                */
+/* ------------------------------------------------------------------ */
+function setupModeSwitch() {
+  if (PLATFORM !== "windows") return;
+  const seg = $("modeSeg");
+  seg.hidden = false;
+  const paint = () => seg.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+  seg.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b || b.dataset.mode === mode) return;
+    mode = b.dataset.mode;
+    try { localStorage.setItem("lookup.mode", mode); } catch {}
+    paint();
+    renderCalc();
+  };
+  paint();
 }
 
 /* ------------------------------------------------------------------ */
@@ -657,7 +733,7 @@ function drawCalcSvg(H, s, L) {
 $("btnStart").onclick = () => (st.source ? stopAll() : startCamera());
 $("btnDemo").onclick = startDemo;
 $("btnCalib").onclick = beginCalibration;
-$("btnInvert").onclick = () => { st.sign *= -1; st.angle = null; updateLidEstimate(); };
+$("btnInvert").onclick = () => { st.sign *= -1; st.angle = null; updateScreenAdvice(); };
 $("btnTest").onclick = startTest;
 $("btnCsv").onclick = downloadCsv;
 $("btnClear").onclick = () => { if (confirm("Удалить все сохранённые запуски?")) { saveRuns([]); renderRuns(); } };
@@ -668,6 +744,9 @@ $("cH").oninput = () => { $("cHr").value = $("cH").value; renderCalc(); };
 $("cHr").oninput = () => { $("cH").value = $("cHr").value; renderCalc(); };
 $("btnBest").onclick = () => { $("cH").value = $("cHr").value = bestHeight(); renderCalc(); };
 
+$("heroFig").innerHTML = figure(8, COLORS.ok);
+$("liveFig").innerHTML = figure(0, COLORS.idle);
+setupModeSwitch();
 buildGauge(getLimit());
 renderLoadChart();
 renderCalc();

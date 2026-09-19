@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ru" data-platform="windows">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LookUp для Windows</title>
+<meta name="description" content="LookUp: угол экрана по высоте платформы и контроль осанки по камере (0–15°).">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%A9%BA%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<header class="top glass">
+  <a class="brand" href="../">🩺 Look<b>Up</b> <em class="badge">Windows</em></a>
+  <nav>
+    <a href="#setup">Экран</a>
+    <a href="#live">Контроль</a>
+    <a href="#experiment">Тест</a>
+    <a href="../" title="Сменить систему">⇄</a>
+  </nav>
+</header>
+
+<main>
+
+<section class="hero">
+  <div class="heroFig" id="heroFig"></div>
+  <div>
+    <h1>0–15°</h1>
+    <p class="lead">Безопасная зона для шеи</p>
+  </div>
+</section>
+
+<section id="problem">
+  <div class="card glass">
+    <h3>Нагрузка на шею, кг</h3>
+    <div id="loadChart" class="bars tall"></div>
+    <p class="src">Hansen, 2014 — модельная оценка</p>
+  </div>
+</section>
+
+<!-- ============ ЭКРАН ============ -->
+<section id="setup">
+  <h2>Экран</h2>
+  <div class="card glass">
+    <div class="seg" id="modeSeg" hidden>
+      <button data-mode="laptop">💻 Ноутбук</button>
+      <button data-mode="monitor">🖥 Монитор</button>
+    </div>
+
+    <label class="hInput">
+      <span>Высота платформы</span>
+      <div class="hRow">
+        <input id="cH" type="number" value="20" min="0" max="60" step="0.5" inputmode="decimal">
+        <em>см</em>
+        <input id="cHr" type="range" min="0" max="40" step="0.5" value="20" aria-label="Высота платформы">
+        <button id="btnBest" class="btn ghost small">✨ Оптимально</button>
+      </div>
+    </label>
+
+    <div class="calcOut">
+      <svg id="calcSvg" viewBox="0 0 480 280" role="img" aria-label="Схема: глаз, экран на платформе"></svg>
+      <div class="results">
+        <div class="resTop">
+          <div class="figBig" id="calcFig"></div>
+          <div class="nums">
+            <div class="num"><span id="rLabel">💻 Крышка</span><b id="rLid">—</b></div>
+            <div class="num"><span>🙂 Голова</span><b id="rAlpha">—</b></div>
+          </div>
+        </div>
+        <div id="rVerdict" class="status idle">—</div>
+        <div id="lidNow" class="lidNow">📷 Угол экрана измерю камерой</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ КОНТРОЛЬ ============ -->
+<section id="live">
+  <h2>Контроль</h2>
+  <div class="live">
+    <div class="stage glass">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="alertBanner" class="alertBanner" hidden>⬆ Голову выше!</div>
+      <div id="stageMsg" class="stageMsg">▶ Нажмите «Старт»</div>
+    </div>
+
+    <div class="panel glass">
+      <svg id="gauge" viewBox="0 0 240 150" role="img" aria-label="Угол наклона головы"></svg>
+      <div class="readout">
+        <div class="figLive" id="liveFig"></div>
+        <div class="big"><span id="angleNum">—</span>°</div>
+      </div>
+      <div id="status" class="status idle">Ожидание</div>
+      <div class="chips">
+        <span id="chipHead" class="chip">Голова</span>
+        <span id="chipSh" class="chip">Плечи</span>
+        <span id="chipScreen" class="chip">Экран</span>
+      </div>
+
+      <div class="row">
+        <button id="btnStart" class="btn">▶ Старт</button>
+        <button id="btnCalib" class="btn ghost" disabled>↻ Заново</button>
+      </div>
+
+      <div id="simBox" hidden>
+        <label>Угол: <b id="simVal">0</b>°
+          <input id="simSlider" type="range" min="-10" max="60" value="0"></label>
+      </div>
+
+      <dl class="stats">
+        <dt>⏱ Подготовка</dt><dd id="setupTime">—</dd>
+        <dt>✅ В норме</dt><dd id="sessSafe">—</dd>
+        <dt>🪑 Сидим</dt><dd id="sitTime">0:00</dd>
+      </dl>
+
+      <details>
+        <summary>⚙ Настройки</summary>
+        <label>Порог, ° <input id="setLimit" type="number" value="15" min="5" max="30"></label>
+        <label>Задержка сирены, сек <input id="setDelay" type="number" value="2" min="0" max="30" step="0.5"></label>
+        <label>🔊 Громкость <input id="setVol" type="range" min="0" max="100" value="60"></label>
+        <div class="row">
+          <button id="btnTestSiren" class="btn ghost small">Проверить сирену</button>
+          <button id="btnDemo" class="btn ghost small">Демо без камеры</button>
+          <button id="btnInvert" class="btn ghost small">⇅ Знак угла</button>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ТЕСТ ============ -->
+<section id="experiment">
+  <h2>Тест</h2>
+  <div class="card glass">
+    <div class="row">
+      <label>Условие
+        <select id="expMode">
+          <option value="without">Без подставки</option>
+          <option value="with">С LookUp</option>
+        </select>
+      </label>
+      <label>Время
+        <select id="expDur">
+          <option value="30">30 сек</option>
+          <option value="60" selected>60 сек</option>
+          <option value="120">120 сек</option>
+        </select>
+      </label>
+      <button id="btnTest" class="btn" disabled>▶ Начать</button>
+      <button id="btnCsv" class="btn ghost small">CSV</button>
+      <button id="btnClear" class="btn ghost small">🗑</button>
+    </div>
+    <div class="progress" id="expProgress" hidden><div id="expBar"></div></div>
+    <p id="expHint" class="note">Сначала «Старт» в блоке «Контроль».</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card glass">
+      <h3>Время в норме</h3>
+      <div id="cmpChart" class="bars"></div>
+      <p id="cmpText" class="note"></p>
+    </div>
+    <div class="card glass">
+      <h3>Запуски</h3>
+      <table id="runsTable">
+        <thead><tr><th></th><th>Норма</th><th>Средн.</th><th>Макс.</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  LookUp · FIZTEX Hackathon · <a href="https://github.com/shensquared/PosturePal">PosturePal</a> (MIT) · Google MediaPipe
+</footer>
+
+<script type="module" src="../app.js"></script>
+</body>
+</html>
