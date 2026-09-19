@@ -278,3 +278,15 @@ tr.activeRow td { background: rgba(10, 10, 11, .04); }
 label.check { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 14px; color: var(--text); }
 label.check input { margin: 0; }
 details > summary { margin: 4px 0; }
+
+/* ===== страница «Источники» ===== */
+.srcGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.srcItem { margin: 0; padding: 18px 20px; }
+.srcItem h3 { text-transform: none; letter-spacing: -.2px; font-size: 15.5px; color: var(--text); margin: 8px 0 6px; }
+.srcItem h3 a { color: var(--text); text-decoration-color: rgba(10, 10, 11, .3); }
+.srcItem p { margin: 4px 0; font-size: 14px; color: var(--muted); }
+.srcItem .srcUse { color: var(--text); }
+.srcMeta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.srcOrg { font-size: 12.5px; color: var(--faint); }
+.legendCard { font-size: 14px; color: var(--muted); line-height: 2; }
+footer br + a, footer a { color: var(--muted); }
