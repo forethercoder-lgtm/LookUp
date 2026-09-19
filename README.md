@@ -50,6 +50,10 @@ Windows: `start.bat` (нужен Python) → http://localhost:8080. Камера
 - В MediaPipe Pose нет точек ключиц: линия ключиц строится по плечам и основанию шеи.
 - Фоновое окно — только Chromium (Chrome/Edge). В скрытой вкладке без него браузер может замедлять страницу.
 
+## Научная база
+
+Что известно науке и официальным нормам (порог 15°, расстояние, нагрузка на шею, методы измерения) и какие у этого ограничения: [docs/EVIDENCE.md](docs/EVIDENCE.md). LookUp — не медицинское устройство.
+
 ## Благодарности
 
-Идея калибровки, задержки сигнала, таймера и метрики «голова над плечами» — [PosturePal](https://github.com/shensquared/PosturePal) (MIT, © Shen Shen). Google MediaPipe (Apache 2.0). Hansen K. K., Surg Technol Int, 2014.
+Идея калибровки, задержки сигнала, таймера и метрики «голова над плечами» — [PosturePal](https://github.com/shensquared/PosturePal) (MIT, © Shen Shen). Google MediaPipe (Apache 2.0). Hansraj K. K., Surg Technol Int, 2014.

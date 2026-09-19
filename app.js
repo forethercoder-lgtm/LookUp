@@ -989,7 +989,7 @@ function downloadCsv() {
 /* График нагрузки на шею: фигурки вместо подписей                     */
 /* ------------------------------------------------------------------ */
 function renderLoadChart() {
-  const data = [[0, 5], [15, 12], [30, 18], [45, 22], [60, 27]]; // Hansen 2014
+  const data = [[0, 5], [15, 12], [30, 18], [45, 22], [60, 27]]; // Hansraj 2014
   const grads = [
     "linear-gradient(180deg,#e4e4e7,#d4d4d8)", "linear-gradient(180deg,#c4c4ca,#a1a1aa)",
     "linear-gradient(180deg,#8b8b93,#6b6b73)", "linear-gradient(180deg,#52525a,#3a3a3f)",
