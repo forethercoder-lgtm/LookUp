@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LookUp — подними экран, подними голову</title>
+<meta name="description" content="LookUp: калькулятор высоты подставки и угла крышки MacBook + камера-контроль наклона головы (0–15°) с сиреной.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">Look<b>Up</b></div>
+  <nav>
+    <a href="#problem">Проблема</a>
+    <a href="#setup">Подставка</a>
+    <a href="#live">Контроль</a>
+    <a href="#experiment">Эксперимент</a>
+  </nav>
+</header>
+
+<main>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <p class="eyebrow">FIZTEX Hackathon · STEM · «ErgoNeck»</p>
+  <h1>Подними экран — <span class="hl">голова поднимется сама</span>.</h1>
+  <p class="lead">LookUp — механическая подставка для MacBook без электроники и приложение, которое
+    считает нужный угол экрана и включает сирену, пока вы смотрите вниз больше 15°.</p>
+  <div class="kpis">
+    <div class="kpi"><span>≤ 5 000 ₸</span>подставка</div>
+    <div class="kpi"><span>0</span>электроники в подставке</div>
+    <div class="kpi"><span>&lt; 30 сек</span>подготовка</div>
+    <div class="kpi"><span>0–15°</span>безопасный наклон</div>
+  </div>
+  <a class="btn" href="#setup">Рассчитать подставку →</a>
+</section>
+
+<!-- ============ ПРОБЛЕМА ============ -->
+<section id="problem">
+  <h2>1. Проблема: «text neck»</h2>
+  <p>Ноутбук на столе заставляет смотреть вниз. Чем сильнее наклон головы, тем больше нагрузка на шейный отдел.</p>
+  <div class="card">
+    <h3>Эффективная нагрузка на шею, кг</h3>
+    <div id="loadChart" class="bars"></div>
+    <p class="src">Источник: Hansen K. K., <i>Assessment of stresses in the cervical spine caused by posture and
+      position of the head</i>, Surgical Technology International, 2014. Значения — оценка по модели, не измерение.</p>
+  </div>
+</section>
+
+<!-- ============ ПОДСТАВКА ============ -->
+<section id="setup">
+  <h2>2. Подставка под ваш MacBook</h2>
+  <p>Введите высоту платформы — угол наклона дисплея посчитается сам.</p>
+
+  <div class="card">
+    <div class="calc">
+      <label>Модель
+        <select id="cMac">
+          <option value="air13">MacBook Air 13″</option>
+          <option value="pro14">MacBook Pro 14″</option>
+          <option value="pro16">MacBook Pro 16″</option>
+        </select>
+      </label>
+      <label>Высота платформы, см <input id="cH" type="number" value="20" min="0" max="60" step="0.5"></label>
+      <label>Высота глаз над столом, см <input id="cEye" type="number" value="45" min="25" max="80"></label>
+      <label>Расстояние глаз → петли, см <input id="cDist" type="number" value="55" min="30" max="100"></label>
+      <label>Безопасный угол, ° <input id="setLimit" type="number" value="15" min="5" max="30"></label>
+    </div>
+    <div class="row">
+      <button id="btnExample" class="btn ghost small">Оптимальный пример</button>
+      <button id="btnBest" class="btn ghost small">Подставить рекомендуемую высоту</button>
+    </div>
+
+    <div class="calcOut">
+      <svg id="calcSvg" viewBox="0 0 480 280" role="img" aria-label="Схема: глаз, MacBook на платформе, линия взгляда"></svg>
+      <div>
+        <div class="result">
+          <span class="rl">Угол раскрытия крышки</span>
+          <span class="rv" id="rLid">—</span>
+        </div>
+        <div class="result">
+          <span class="rl">Наклон головы (взгляд вниз)</span>
+          <span class="rv" id="rAlpha">—</span>
+        </div>
+        <div id="rVerdict" class="status idle">—</div>
+        <p id="rHint" class="note"></p>
+      </div>
+    </div>
+    <p class="note">Как измерить: сядьте, как обычно работаете, и линейкой измерьте от стола до внешнего угла глаза
+      и от глаз до места, где будет стоять MacBook. Размеры экранов — приблизительные, у вашей модели могут
+      отличаться на 1–2 см. Поднятый MacBook требует внешней клавиатуры и мыши.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Из чего сделать (цель: механика, без электроники)</h3>
+      <ul>
+        <li>Набор сменных блоков из фанеры 12 мм или бруса: 5, 10 и 15 см — ставятся друг на друга, высота = сумма.</li>
+        <li>Блоки склеены и шлифованы; сверху противоскользящая накладка, чтобы MacBook не съезжал.</li>
+        <li>Подставка не касается кожи — риск аллергии минимален.</li>
+        <li>Подготовка: собрать нужную стопку блоков (≈ 10 сек), поставить MacBook, выставить крышку по подсказке (≈ 10 сек).</li>
+      </ul>
+      <p class="note">MacBook весит до 2,2 кг — проверьте, что стопка не шатается, а ноутбук стоит устойчиво на всей площади.</p>
+    </div>
+    <div class="card">
+      <h3>Смета (ориентировочно — замените на чеки)</h3>
+      <table>
+        <tr><td>Фанера 12 мм / брус</td><td class="r">~ 1 800 ₸</td></tr>
+        <tr><td>Клей ПВА</td><td class="r">~ 300 ₸</td></tr>
+        <tr><td>Противоскользящая накладка</td><td class="r">~ 500 ₸</td></tr>
+        <tr><td>Шлифовальная бумага</td><td class="r">~ 200 ₸</td></tr>
+        <tr class="tot"><td>Итого</td><td class="r">~ 2 800 ₸</td></tr>
+      </table>
+      <p class="note">Лимит задания — 5 000 ₸ на единицу.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LIVE ============ -->
+<section id="live">
+  <h2>3. Контроль: сирена, пока голова опущена</h2>
+  <p>Нажмите «Старт», сядьте прямо и смотрите вдаль 3 секунды (калибровка). Дальше: угол в норме — тишина,
+    наклон больше порога — сирена, пока голова не вернётся.</p>
+  <div class="live">
+    <div class="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="alertBanner" class="alertBanner" hidden>Поднимите голову!</div>
+      <div id="stageMsg" class="stageMsg">Камера работает локально в браузере — видео никуда не отправляется.</div>
+    </div>
+
+    <div class="panel">
+      <svg id="gauge" viewBox="0 0 240 150" role="img" aria-label="Угол наклона головы"></svg>
+      <div class="big"><span id="angleNum">—</span>°</div>
+      <div id="status" class="status idle">Ожидание</div>
+
+      <div class="row">
+        <button id="btnStart" class="btn">▶ Старт</button>
+        <button id="btnCalib" class="btn ghost" disabled>Калибровка</button>
+      </div>
+      <div class="row">
+        <button id="btnDemo" class="btn ghost small">Демо без камеры</button>
+        <button id="btnInvert" class="btn ghost small" title="Если при наклоне головы вниз угол уменьшается">⇅ Инвертировать знак</button>
+      </div>
+
+      <div id="simBox" hidden>
+        <label>Симулятор угла: <b id="simVal">0</b>°
+          <input id="simSlider" type="range" min="-10" max="60" value="0"></label>
+      </div>
+
+      <dl class="stats">
+        <dt>Подготовка</dt><dd id="setupTime">—</dd>
+        <dt>В безопасной зоне (сессия)</dt><dd id="sessSafe">—</dd>
+        <dt>Сидим</dt><dd id="sitTime">0:00</dd>
+      </dl>
+
+      <details>
+        <summary>Настройки сирены</summary>
+        <label>Задержка до сирены, сек <input id="setDelay" type="number" value="2" min="0" max="30" step="0.5"></label>
+        <label>Громкость <input id="setVol" type="range" min="0" max="100" value="60"></label>
+        <button id="btnTestSiren" class="btn ghost small" style="margin-top:8px">Проверить сирену (1,5 сек)</button>
+      </details>
+    </div>
+  </div>
+  <p class="note">Как это работает: MediaPipe Face Landmarker строит 3D-позу лица, из неё берётся угол наклона
+    головы (pitch) относительно вашей калибровки. Это оценка, а не медицинское измерение. Держите вкладку
+    открытой в отдельном окне рядом с рабочим: браузер может замедлять неактивные вкладки.</p>
+</section>
+
+<!-- ============ ЭКСПЕРИМЕНТ ============ -->
+<section id="experiment">
+  <h2>4. Эксперимент: «без» и «с» подставкой</h2>
+  <p>Пользователь 60 секунд работает за MacBook — сначала <b>без подставки</b>, потом <b>с LookUp</b>.
+    Тест засчитан, если ≥ 90 % времени угол ≤ порога.</p>
+
+  <div class="card">
+    <div class="row">
+      <label>Условие
+        <select id="expMode">
+          <option value="without">Без подставки</option>
+          <option value="with">С LookUp</option>
+        </select>
+      </label>
+      <label>Длительность
+        <select id="expDur">
+          <option value="30">30 сек</option>
+          <option value="60" selected>60 сек</option>
+          <option value="120">120 сек</option>
+        </select>
+      </label>
+      <button id="btnTest" class="btn" disabled>Начать тест</button>
+      <button id="btnCsv" class="btn ghost small">Скачать CSV</button>
+      <button id="btnClear" class="btn ghost small">Очистить</button>
+    </div>
+    <div class="progress" id="expProgress" hidden><div id="expBar"></div></div>
+    <p id="expHint" class="note">Сначала нажмите «Старт» в блоке «Контроль» (или демо-режим).</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>Сравнение: время в безопасной зоне</h3>
+      <div id="cmpChart" class="bars"></div>
+      <p id="cmpText" class="note"></p>
+    </div>
+    <div class="card">
+      <h3>Запуски</h3>
+      <table id="runsTable">
+        <thead><tr><th>Условие</th><th>≤ порога</th><th>Средний</th><th>Макс.</th><th>Итог</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  LookUp · FIZTEX Hackathon · Идея контроля основана на
+  <a href="https://github.com/shensquared/PosturePal">PosturePal</a> (MIT, © Shen Shen) — калибровка, задержка
+  сигнала и таймер сидения; расчёт угла и интерфейс переписаны для браузера.
+  Распознавание лица: Google MediaPipe (Apache 2.0).
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
