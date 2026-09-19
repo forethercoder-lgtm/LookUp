@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LookUp для Windows</title>
 <meta name="description" content="LookUp: угол экрана по высоте платформы и контроль осанки по камере (0–15°).">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%A9%BA%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Crect width=%2224%22 height=%2224%22 rx=%226%22 fill=%22%230a0a0b%22/%3E%3Cpath d=%22M12 17V7M7.5 11.5 12 7l4.5 4.5%22 fill=%22none%22 stroke=%22white%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E">
 <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -13,12 +13,15 @@
 <div class="bg" aria-hidden="true"><i></i><i></i><i></i></div>
 
 <header class="top glass">
-  <a class="brand" href="../">🩺 Look<b>Up</b> <em class="badge">Windows</em></a>
+  <a class="brand" href="../">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#0a0a0b"/><path d="M12 17V7M7.5 11.5 12 7l4.5 4.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    LookUp <em class="badge">Windows</em>
+  </a>
   <nav>
     <a href="#setup">Экран</a>
     <a href="#live">Контроль</a>
     <a href="#experiment">Тест</a>
-    <a href="../" title="Сменить систему">⇄</a>
+    <a href="../">Система</a>
   </nav>
 </header>
 
@@ -45,8 +48,8 @@
   <h2>Экран</h2>
   <div class="card glass">
     <div class="seg" id="modeSeg" hidden>
-      <button data-mode="laptop">💻 Ноутбук</button>
-      <button data-mode="monitor">🖥 Монитор</button>
+      <button data-mode="laptop">Ноутбук</button>
+      <button data-mode="monitor">Монитор</button>
     </div>
 
     <label class="hInput">
@@ -55,7 +58,7 @@
         <input id="cH" type="number" value="20" min="0" max="60" step="0.5" inputmode="decimal">
         <em>см</em>
         <input id="cHr" type="range" min="0" max="40" step="0.5" value="20" aria-label="Высота платформы">
-        <button id="btnBest" class="btn ghost small">✨ Оптимально</button>
+        <button id="btnBest" class="btn ghost small">Оптимально</button>
       </div>
     </label>
 
@@ -65,12 +68,12 @@
         <div class="resTop">
           <div class="figBig" id="calcFig"></div>
           <div class="nums">
-            <div class="num"><span id="rLabel">💻 Крышка</span><b id="rLid">—</b></div>
-            <div class="num"><span>🙂 Голова</span><b id="rAlpha">—</b></div>
+            <div class="num"><span id="rLabel">Крышка</span><b id="rLid">—</b></div>
+            <div class="num"><span>Голова</span><b id="rAlpha">—</b></div>
           </div>
         </div>
-        <div id="rVerdict" class="status idle">—</div>
-        <div id="lidNow" class="lidNow">📷 Угол экрана измерю камерой</div>
+        <div id="rVerdict" class="status">—</div>
+        <div id="lidNow" class="lidNow">Угол экрана измерю камерой</div>
         <div id="distNow" class="lidNow"></div>
       </div>
     </div>
@@ -84,16 +87,16 @@
     <div class="stage glass">
       <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
-      <div id="alertBanner" class="alertBanner" hidden>⬆ Голову выше!</div>
+      <div id="alertBanner" class="alertBanner" hidden>Голову выше</div>
       <div id="prep" class="prep" hidden>
-        <span id="pFace" class="chip">👤</span>
-        <span id="pDist" class="chip">📏</span>
-        <span id="pFrame" class="chip">🖼</span>
-        <span id="pSh" class="chip">🧍</span>
-        <span id="pLight" class="chip">💡</span>
-        <button id="btnSkip" class="btn ghost small">Пропустить →</button>
+        <span id="pFace" class="chip">Лицо</span>
+        <span id="pDist" class="chip">Дистанция</span>
+        <span id="pFrame" class="chip">Кадр</span>
+        <span id="pSh" class="chip">Плечи</span>
+        <span id="pLight" class="chip">Свет</span>
+        <button id="btnSkip" class="btn ghost small">Пропустить</button>
       </div>
-      <div id="stageMsg" class="stageMsg">▶ Нажмите «Старт»</div>
+      <div id="stageMsg" class="stageMsg">Нажмите «Старт»</div>
     </div>
 
     <div class="panel glass">
@@ -102,22 +105,22 @@
         <div class="figLive" id="liveFig"></div>
         <div class="big"><span id="angleNum">—</span>°</div>
       </div>
-      <div id="status" class="status idle">Ожидание</div>
+      <div id="status" class="status">Ожидание</div>
       <div class="chips">
         <span id="chipHead" class="chip">Голова</span>
         <span id="chipSh" class="chip">Плечи</span>
         <span id="chipScreen" class="chip">Экран</span>
-        <span id="chipImu" class="chip">🎧 —</span>
+        <span id="chipImu" class="chip">Наушники</span>
       </div>
 
       <div class="row">
-        <button id="btnStart" class="btn">▶ Старт</button>
-        <button id="btnCalib" class="btn ghost" disabled>↻ Заново</button>
+        <button id="btnStart" class="btn">Старт</button>
+        <button id="btnCalib" class="btn ghost" disabled>Заново</button>
       </div>
       <div class="row">
-        <button id="btnPhones" class="btn ghost small">🎧 Наушники</button>
-        <button id="btnNoCam" class="btn ghost small">🎧 Без камеры</button>
-        <button id="btnPip" class="btn ghost small">🪟 Фон</button>
+        <button id="btnPhones" class="btn ghost small">Наушники</button>
+        <button id="btnNoCam" class="btn ghost small">Без камеры</button>
+        <button id="btnPip" class="btn ghost small">Фон</button>
       </div>
 
       <div id="simBox" hidden>
@@ -126,20 +129,20 @@
       </div>
 
       <dl class="stats">
-        <dt>⏱ Подготовка</dt><dd id="setupTime">—</dd>
-        <dt>✅ В норме</dt><dd id="sessSafe">—</dd>
-        <dt>🪑 Сидим</dt><dd id="sitTime">0:00</dd>
+        <dt>Подготовка</dt><dd id="setupTime">—</dd>
+        <dt>В норме</dt><dd id="sessSafe">—</dd>
+        <dt>Сидим</dt><dd id="sitTime">0:00</dd>
       </dl>
 
       <details>
-        <summary>⚙ Настройки</summary>
+        <summary>Настройки</summary>
         <label>Порог, ° <input id="setLimit" type="number" value="15" min="5" max="30"></label>
         <label>Задержка сирены, сек <input id="setDelay" type="number" value="2" min="0" max="30" step="0.5"></label>
-        <label>🔊 Громкость <input id="setVol" type="range" min="0" max="100" value="60"></label>
+        <label>Громкость <input id="setVol" type="range" min="0" max="100" value="60"></label>
         <div class="row">
           <button id="btnTestSiren" class="btn ghost small">Проверить сирену</button>
           <button id="btnDemo" class="btn ghost small">Демо без камеры</button>
-          <button id="btnInvert" class="btn ghost small">⇅ Знак угла</button>
+          <button id="btnInvert" class="btn ghost small">Сменить знак угла</button>
         </div>
       </details>
     </div>
@@ -164,9 +167,9 @@
           <option value="120">120 сек</option>
         </select>
       </label>
-      <button id="btnTest" class="btn" disabled>▶ Начать</button>
+      <button id="btnTest" class="btn" disabled>Начать</button>
       <button id="btnCsv" class="btn ghost small">CSV</button>
-      <button id="btnClear" class="btn ghost small">🗑</button>
+      <button id="btnClear" class="btn ghost small">Очистить</button>
     </div>
     <div class="progress" id="expProgress" hidden><div id="expBar"></div></div>
     <p id="expHint" class="note">Сначала «Старт» в блоке «Контроль».</p>

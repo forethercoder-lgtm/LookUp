@@ -39,7 +39,7 @@ const PREP_TIMEOUT_MS = 12000;
 const IMU_URL = "ws://127.0.0.1:8765";
 const IMU_STALE_MS = 1000;
 
-const COLORS = { ok: "#1fb86a", warn: "#f5a524", bad: "#f0483e", idle: "#12203f" };
+const COLORS = { ok: "#2f7d5b", warn: "#b4791f", bad: "#b5423b", idle: "#0a0a0b" };
 
 /* ------------------------------------------------------------------ */
 /* Устройства. Пользователь вводит только высоту платформы, остальное  */
@@ -49,11 +49,11 @@ const COLORS = { ok: "#1fb86a", warn: "#f5a524", bad: "#f0483e", idle: "#12203f"
 const EYE_H = 45; // высота глаз над столом, см
 const DEVICES = {
   mac: {
-    laptop: { lid: true, panel: 20, bezel: 1.2, baseH: 1.5, baseD: 22, dist: 55, maxPhi: 45, label: "💻 Крышка" },
+    laptop: { lid: true, panel: 20, bezel: 1.2, baseH: 1.5, baseD: 22, dist: 55, maxPhi: 45, label: "Крышка" },
   },
   windows: {
-    laptop: { lid: true, panel: 19, bezel: 1.5, baseH: 2.0, baseD: 25, dist: 55, maxPhi: 45, label: "💻 Крышка" },
-    monitor: { lid: false, panel: 34, bezel: 2, baseH: 6, baseD: 22, dist: 65, maxPhi: 20, label: "🖥 Наклон" },
+    laptop: { lid: true, panel: 19, bezel: 1.5, baseH: 2.0, baseD: 25, dist: 55, maxPhi: 45, label: "Крышка" },
+    monitor: { lid: false, panel: 34, bezel: 2, baseH: 6, baseD: 22, dist: 65, maxPhi: 20, label: "Наклон" },
   },
 };
 let mode = "laptop";
@@ -259,7 +259,7 @@ async function startCamera() {
   stopAll();
   sirenInit(); // AudioContext можно создать только из клика
   st.startedAt = performance.now();
-  setPhase("loading", "⏳ Загрузка…");
+  setPhase("loading", "Загрузка…");
   $("btnStart").disabled = true;
   try {
     await initModels();
@@ -277,7 +277,7 @@ async function startCamera() {
     setRunning(true);
   } catch (e) {
     console.error(e);
-    setPhase("idle", "📷 Камера не запустилась");
+    setPhase("idle", "Камера не запустилась");
     $("stageMsg").title = String(e.message || e);
     st.source = null;
   }
@@ -288,7 +288,7 @@ async function startCamera() {
 function startImuOnly() {
   if (!st.ws || st.ws.readyState !== 1) {
     connectPhones();
-    msg("🎧 Мост не запущен — см. bridge/README");
+    msg("Мост не запущен — см. bridge/README");
     return;
   }
   stopAll();
@@ -342,7 +342,7 @@ function stopAll() {
   updatePip();
 }
 
-const setRunning = (on) => { $("btnStart").textContent = on ? "■ Стоп" : "▶ Старт"; };
+const setRunning = (on) => { $("btnStart").textContent = on ? "Стоп" : "Старт"; };
 
 function resetSession() {
   st.sessTotal = 0; st.sessSafe = 0; st.badSince = null;
@@ -384,7 +384,7 @@ function beginPrepare() {
   st.prepT = 0; st.prepOkSince = 0; st.distSamples = [];
   $("prep").hidden = false;
   $("btnCalib").disabled = true;
-  msg("👤 Сядьте перед камерой");
+  msg("Сядьте перед камерой");
 }
 
 // Время подготовки считаем по тикам (dt ограничен), а не по часам: первый прогон
@@ -396,8 +396,8 @@ function evalPrep(now, g, dt) {
   let hint = null;
 
   const faceOk = !!d;
-  items.pFace = faceOk ? ["ok", "👤 ✓"] : ["bad", "👤 нет лица"];
-  if (!faceOk) hint = "👤 Сядьте перед камерой";
+  items.pFace = faceOk ? ["ok", "Лицо"] : ["bad", "Нет лица"];
+  if (!faceOk) hint = "Сядьте перед камерой";
 
   let distOk = false, frameOk = false;
   if (d) {
@@ -409,35 +409,35 @@ function evalPrep(now, g, dt) {
       if (st.distSamples.length > 30) st.distSamples.shift();
     }
     const cm = st.distSamples.length ? median(st.distSamples) : null;
-    if (cm === null) items.pDist = ["", "📏 …"];
-    else if (cm < DIST_OK[0]) { items.pDist = ["warn", `📏 ${Math.round(cm)} см · дальше`]; hint = hint || "↔ Отодвиньте экран от себя"; }
-    else if (cm > DIST_OK[1]) { items.pDist = ["warn", `📏 ${Math.round(cm)} см · ближе`]; hint = hint || "↔ Придвиньте экран к себе"; }
-    else { distOk = true; items.pDist = ["ok", `📏 ${Math.round(cm)} см ✓`]; }
+    if (cm === null) items.pDist = ["", "Дистанция …"];
+    else if (cm < DIST_OK[0]) { items.pDist = ["warn", `${Math.round(cm)} см · дальше`]; hint = hint || "↔ Отодвиньте экран от себя"; }
+    else if (cm > DIST_OK[1]) { items.pDist = ["warn", `${Math.round(cm)} см · ближе`]; hint = hint || "↔ Придвиньте экран к себе"; }
+    else { distOk = true; items.pDist = ["ok", `${Math.round(cm)} см`]; }
     if (cm === null) distOk = true; // нет оценки — не блокируем
 
     // положение лица в кадре: камера должна смотреть на лицо
     const fy = (d.lm[10].y + d.lm[152].y) / 2;
-    if (fy > FACE_Y_OK[1]) { items.pFrame = ["warn", "🖼 ⤵ прикройте"]; hint = hint || "⤵ Прикройте экран (наклон вперёд)"; }
-    else if (fy < FACE_Y_OK[0]) { items.pFrame = ["warn", "🖼 ⤴ откройте"]; hint = hint || "⤴ Откройте экран (наклон назад)"; }
-    else { frameOk = true; items.pFrame = ["ok", "🖼 ✓"]; }
+    if (fy > FACE_Y_OK[1]) { items.pFrame = ["warn", "Кадр ↓ прикройте"]; hint = hint || "↓ Прикройте экран (наклон вперёд)"; }
+    else if (fy < FACE_Y_OK[0]) { items.pFrame = ["warn", "Кадр ↑ откройте"]; hint = hint || "↑ Откройте экран (наклон назад)"; }
+    else { frameOk = true; items.pFrame = ["ok", "Кадр"]; }
   } else {
-    items.pDist = ["", "📏"]; items.pFrame = ["", "🖼"];
+    items.pDist = ["", "Дистанция"]; items.pFrame = ["", "Кадр"];
   }
 
   const shSeen = st.pts && now - st.pts.at < SHOULDER_STALE_MS;
   const shNeeded = !!st.pose && st.prepT < PREP_SHOULDERS_MS;
-  if (!st.pose) items.pSh = ["", "🧍 —"];
-  else if (shSeen) items.pSh = ["ok", "🧍 ✓"];
-  else { items.pSh = ["warn", "🧍 плеч не видно"]; if (d) hint = hint || "🧍 Плеч не видно — отодвиньтесь или прикройте экран"; }
+  if (!st.pose) items.pSh = ["", "Плечи"];
+  else if (shSeen) items.pSh = ["ok", "Плечи"];
+  else { items.pSh = ["warn", "Плеч не видно"]; if (d) hint = hint || "Плеч не видно — отодвиньтесь или прикройте экран"; }
 
   const luma = frameLuma(g.img, g.W, g.H);
   const lightOk = luma >= LUMA_MIN;
-  items.pLight = lightOk ? ["ok", "💡 ✓"] : ["bad", "💡 темно"];
-  if (!lightOk) hint = hint || "💡 Добавьте света";
+  items.pLight = lightOk ? ["ok", "Свет"] : ["bad", "Темно"];
+  if (!lightOk) hint = hint || "Добавьте света";
 
   for (const id in items) setChip(id, items[id][0], items[id][1]);
   const ready = faceOk && distOk && frameOk && lightOk && (shSeen || !shNeeded);
-  $("stageMsg").textContent = ready ? "✅ Отлично — держитесь так" : (hint || "…");
+  $("stageMsg").textContent = ready ? "Отлично — держитесь так" : (hint || "…");
   setStatus("idle", $("stageMsg").textContent);
 
   if (ready) {
@@ -452,7 +452,7 @@ function endPrepare() {
   if (st.distSamples.length >= 5) {
     const cm = Math.round(median(st.distSamples));
     distOverride = Math.max(35, Math.min(90, cm));
-    $("distNow").innerHTML = `📏 До экрана ≈ <b>${cm} см</b> (по камере) — учтено в расчёте`;
+    $("distNow").innerHTML = `До экрана ≈ <b>${cm} см</b> (по камере) — учтено в расчёте`;
     renderCalc();
   }
   beginCalibration();
@@ -471,7 +471,7 @@ function beginCalibration() {
   $("prep").hidden = true;
   $("btnCalib").disabled = true;
   clearAlert();
-  msg("👀 Смотрите вдаль");
+  msg("Смотрите вдаль");
   try { if (st.ws?.readyState === 1) st.ws.send("calibrate"); } catch {}
 }
 
@@ -484,7 +484,7 @@ function beginNod() {
   // человек двигался при калибровке — нейтраль будет неточной, повторяем
   if ((st.nCam !== null && spread(st.calibCam) > CALIB_MAX_SPREAD) || (st.nImu !== null && spread(st.calibImu) > CALIB_MAX_SPREAD)) {
     beginCalibration();
-    msg("🧘 Замрите на 3 секунды");
+    msg("Замрите на 3 секунды");
     return;
   }
   st.base = st.calibHead.length >= 5 ? { head: median(st.calibHead), w: median(st.calibW) } : null;
@@ -492,7 +492,7 @@ function beginNod() {
   st.signed = { cam: st.nCam === null, imu: st.nImu === null };
   st.phase = "nod";
   st.nodStart = 0;
-  msg("🙇 Кивните вниз");
+  msg("Кивните вниз");
 }
 
 function finishCalibration() {
@@ -505,7 +505,7 @@ function finishCalibration() {
   $("btnTest").disabled = false;
   $("expHint").textContent = st.source === "sim" ? "Демо: результаты не сохраняются." : "Готово — работайте как обычно.";
   updateScreenAdvice();
-  msg(st.nImu !== null ? "✅ Готово · 🎧 наушники" : "✅ Готово");
+  msg(st.nImu !== null ? "Готово · наушники" : "Готово");
 }
 
 function msg(text) {
@@ -563,7 +563,7 @@ function tick(now) {
     if (turned) { clearAlert(); setStatus("idle", "↔ Смотрите на экран"); }
     else if (st.phase !== "prepare" && now - st.lastFaceAt > FACE_LOST_MS) {
       clearAlert();
-      setStatus("idle", st.source === "imu" ? "🎧 Нет данных с наушников" : "🙈 Лица не видно");
+      setStatus("idle", st.source === "imu" ? "Нет данных с наушников" : "Лица не видно");
     }
   } else {
     handleSample({ cam, imu }, dt, now);
@@ -597,7 +597,7 @@ function handleSample({ cam, imu }, dt, now) {
       if (Math.abs(dv) >= NOD_MIN) { st.signImu = dv > 0 ? 1 : -1; st.signed.imu = true; }
     }
     if (st.signed.cam && st.signed.imu) finishCalibration();
-    else if (now - st.nodStart > NOD_TIMEOUT_MS) { finishCalibration(); msg("🤷 Кивок не замечен"); }
+    else if (now - st.nodStart > NOD_TIMEOUT_MS) { finishCalibration(); msg("Кивок не замечен"); }
     return;
   }
   if (st.phase !== "monitoring") return;
@@ -625,15 +625,15 @@ function handleSample({ cam, imu }, dt, now) {
   }
 
   const bad = headBad || sh === "slouch" || sh === "tilt" || lean;
-  const reason = headBad ? "⬆ Голову выше!" : sh === "slouch" ? "🧍 Выпрямитесь!" : sh === "tilt" ? "↔ Ровнее плечи!" : "↔ Отодвиньтесь от экрана!";
+  const reason = headBad ? "↑ Голову выше!" : sh === "slouch" ? "Выпрямитесь!" : sh === "tilt" ? "↔ Ровнее плечи!" : "↔ Отодвиньтесь от экрана!";
 
   st.sessTotal += dt;
   if (!bad) st.sessSafe += dt;
 
   updateGauge(st.angle, limit, headBad);
-  setChip("chipHead", headBad ? "bad" : "ok", headBad ? "⚠ Голова" : "🙂 Голова");
-  const shChip = lean ? ["bad", "⚠ Близко"] :
-    { ok: ["ok", "🙂 Плечи"], slouch: ["bad", "⚠ Сутулость"], tilt: ["warn", "⚠ Перекос"] }[sh] || ["", "Плечи"];
+  setChip("chipHead", headBad ? "bad" : "ok", headBad ? "Голова · наклон" : "Голова");
+  const shChip = lean ? ["bad", "Плечи · близко"] :
+    { ok: ["ok", "Плечи"], slouch: ["bad", "Плечи · сутулость"], tilt: ["warn", "Плечи · перекос"] }[sh] || ["", "Плечи"];
   setChip("chipSh", shChip[0], shChip[1]);
   updateAlert(bad, reason, now);
   updateTest(bad, st.angle, dt);
@@ -700,11 +700,11 @@ function buildGauge(limit) {
   for (const [a, b, c] of zones) {
     svgEl("path", { d: arcPath(cx, cy, r, d(a), d(b)), stroke: c, "stroke-width": 16, fill: "none" }, g);
   }
-  svgEl("line", { id: "needle", x1: cx, y1: cy, stroke: "#12203f", "stroke-width": 4, "stroke-linecap": "round" }, g);
-  svgEl("circle", { cx, cy, r: 7, fill: "#12203f" }, g);
+  svgEl("line", { id: "needle", x1: cx, y1: cy, stroke: "#0a0a0b", "stroke-width": 4, "stroke-linecap": "round" }, g);
+  svgEl("circle", { cx, cy, r: 7, fill: "#0a0a0b" }, g);
   for (const t of [0, limit, GAUGE_MAX]) {
     const [x, y] = polar(cx, cy, r + 18, d(t));
-    svgEl("text", { x, y: y + 4, "text-anchor": "middle", fill: "#5a6a90", "font-size": 11 }, g).textContent = t + "°";
+    svgEl("text", { x, y: y + 4, "text-anchor": "middle", fill: "#6b6b73", "font-size": 11 }, g).textContent = t + "°";
   }
   g.dataset.limit = limit;
   setNeedle(0);
@@ -722,7 +722,7 @@ function updateGauge(angle, limit, headBad) {
   $("angleNum").textContent = Math.round(angle);
   const zone = !headBad ? "ok" : angle <= limit * 2 ? "warn" : "bad";
   $("liveFig").innerHTML = figure(angle, COLORS[zone], limit);
-  setStatus(zone, { ok: "🙂 В норме", warn: "😬 Наклон растёт", bad: "😣 Опасно" }[zone]);
+  setStatus(zone, { ok: "В норме", warn: "Наклон растёт", bad: "Опасно" }[zone]);
   document.querySelector(".stage").className = "stage glass" + (st.source === "imu" ? " noCam " : " ") + zone;
 }
 function setStatus(cls, text) {
@@ -794,7 +794,7 @@ function connectPhones() {
     // с https-сайта Chrome блокирует localhost, пока не разрешена «локальная сеть»
     if (!opened && !st.source && location.protocol === "https:" && !st.wsHinted) {
       st.wsHinted = true;
-      msg("🎧 Мост не найден. Разрешите доступ к локальной сети или откройте localhost:8080");
+      msg("Мост не найден. Разрешите доступ к локальной сети или откройте localhost:8080");
     }
     if (st.imuWanted) st.retry = setTimeout(connectPhones, 2000);
   };
@@ -814,12 +814,12 @@ function disconnectPhones() {
 function paintImuChip(now) {
   const live = st.imu && now - st.imu.at < IMU_STALE_MS;
   const open = st.ws && st.ws.readyState === 1;
-  $("btnPhones").textContent = st.imuWanted ? "🎧 Наушники ✓" : "🎧 Наушники";
-  if (!st.imuWanted) return setChip("chipImu", "", "🎧 —");
-  if (!open) return setChip("chipImu", "warn", "🎧 мост?");
-  if (!live) return setChip("chipImu", "warn", "🎧 нет данных");
-  if (st.phase === "monitoring" && st.nImu === null) return setChip("chipImu", "warn", "🎧 ↻ Заново");
-  setChip("chipImu", "ok", st.usingImu ? "🎧 ✓ датчик" : "🎧 ✓");
+  $("btnPhones").textContent = st.imuWanted ? "Наушники ✓" : "Наушники";
+  if (!st.imuWanted) return setChip("chipImu", "", "Наушники");
+  if (!open) return setChip("chipImu", "warn", "Наушники · мост?");
+  if (!live) return setChip("chipImu", "warn", "Наушники · нет данных");
+  if (st.phase === "monitoring" && st.nImu === null) return setChip("chipImu", "warn", "Наушники · нажмите «Заново»");
+  setChip("chipImu", "ok", st.usingImu ? "Наушники · датчик" : "Наушники");
 }
 
 /* ------------------------------------------------------------------ */
@@ -827,7 +827,7 @@ function paintImuChip(now) {
 /* ------------------------------------------------------------------ */
 async function togglePip() {
   if (st.pip) { st.pip.close(); return; }
-  if (!("documentPictureInPicture" in window)) { msg("🪟 Фоновое окно есть в Chrome и Edge"); return; }
+  if (!("documentPictureInPicture" in window)) { msg("Фоновое окно есть в Chrome и Edge"); return; }
   try {
     const w = await window.documentPictureInPicture.requestWindow({ width: 260, height: 360 });
     for (const l of document.querySelectorAll('link[rel="stylesheet"]')) {
@@ -842,25 +842,26 @@ async function togglePip() {
         <div id="pAlert" class="alertBanner" hidden></div>
         <div class="figLive" id="pFig"></div>
         <div class="big"><span id="pNum">—</span>°</div>
+        <div id="pStatus" class="status">—</div>
         <div class="chips" id="pChips"></div>
         <div class="row" style="justify-content:center">
-          <button id="pMute" class="btn ghost small">🔇 Тише</button>
-          <button id="pStop" class="btn ghost small">■ Стоп</button>
+          <button id="pMute" class="btn ghost small">Тише</button>
+          <button id="pStop" class="btn small">Стоп</button>
         </div>
       </div>`;
     w.document.getElementById("pMute").onclick = (e) => {
       st.muted = !st.muted;
-      e.target.textContent = st.muted ? "🔊 Звук" : "🔇 Тише";
+      e.target.textContent = st.muted ? "Звук" : "Тише";
       sirenSet(st.alerting);
     };
     w.document.getElementById("pStop").onclick = () => stopAll();
-    w.addEventListener("pagehide", () => { st.pip = null; $("btnPip").textContent = "🪟 Фон"; });
+    w.addEventListener("pagehide", () => { st.pip = null; $("btnPip").textContent = "Фон"; });
     st.pip = w;
-    $("btnPip").textContent = "🪟 Закрыть окно";
+    $("btnPip").textContent = "Закрыть окно";
     updatePip();
   } catch (e) {
     console.warn(e);
-    msg("🪟 Не удалось открыть окно");
+    msg("Не удалось открыть окно");
   }
 }
 
@@ -874,6 +875,8 @@ function updatePip() {
     q("pNum").textContent = st.angle === null ? "—" : Math.round(st.angle);
     q("pAlert").hidden = !st.alerting;
     q("pAlert").textContent = $("alertBanner").textContent;
+    q("pStatus").className = $("status").className;
+    q("pStatus").textContent = $("status").textContent;
     q("pChips").innerHTML = ["chipHead", "chipSh", "chipImu"]
       .map((id) => `<span class="${$(id).className}">${$(id).textContent}</span>`).join("");
   } catch { st.pip = null; }
@@ -891,7 +894,7 @@ function startTest() {
   st.test = { dur: Number($("expDur").value), t: 0, safe: 0, sum: 0, max: 0, mode: $("expMode").value, limit: getLimit() };
   $("btnTest").disabled = true;
   $("expProgress").hidden = false;
-  $("expHint").textContent = "⏳ Идёт тест…";
+  $("expHint").textContent = "Идёт тест…";
 }
 
 function updateTest(bad, angle, dt) {
@@ -915,7 +918,7 @@ function finishTest() {
   };
   if (st.source !== "sim") {
     const runs = loadRuns(); runs.push(run); saveRuns(runs);
-    $("expHint").textContent = "💾 Сохранено";
+    $("expHint").textContent = "Сохранено";
   } else {
     $("expHint").textContent = `Демо: ${Math.round(run.safeRatio * 100)} % (не сохранено)`;
   }
@@ -929,7 +932,7 @@ function renderRuns() {
   for (const r of runs.slice().reverse()) {
     const ok = r.safeRatio >= PASS_RATIO;
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${r.mode === "with" ? "✨ С" : "Без"}</td>
+    tr.innerHTML = `<td>${r.mode === "with" ? "С" : "Без"}</td>
       <td>${Math.round(r.safeRatio * 100)} %</td><td>${r.mean.toFixed(1)}°</td><td>${r.max.toFixed(0)}°</td>
       <td class="${ok ? "pass" : "fail"}">${ok ? "✓" : "✗"}</td>`;
     tb.appendChild(tr);
@@ -941,7 +944,7 @@ function renderRuns() {
   const a = avg("without"), b = avg("with");
   const chart = $("cmpChart");
   chart.innerHTML = "";
-  for (const [label, v, color] of [["Без", a, "linear-gradient(180deg,#ff8a80,#f0483e)"], ["✨ С LookUp", b, "linear-gradient(180deg,#5ee0a0,#1fb86a)"]]) {
+  for (const [label, v, color] of [["Без", a, "linear-gradient(180deg,#d4d4d8,#a1a1aa)"], ["С LookUp", b, "linear-gradient(180deg,#3a3a3f,#0a0a0b)"]]) {
     const d = document.createElement("div");
     d.className = "bar";
     d.innerHTML = `<b>${v === null ? "—" : Math.round(v * 100) + " %"}</b><i style="height:${v === null ? 0 : v * 150}px;background:${color}"></i><em>${label}</em>`;
@@ -968,16 +971,20 @@ function downloadCsv() {
 /* ------------------------------------------------------------------ */
 function renderLoadChart() {
   const data = [[0, 5], [15, 12], [30, 18], [45, 22], [60, 27]]; // Hansen 2014
+  const grads = [
+    "linear-gradient(180deg,#e4e4e7,#d4d4d8)", "linear-gradient(180deg,#c4c4ca,#a1a1aa)",
+    "linear-gradient(180deg,#8b8b93,#6b6b73)", "linear-gradient(180deg,#52525a,#3a3a3f)",
+    "linear-gradient(180deg,#2a2a2e,#0a0a0b)",
+  ];
   const el = $("loadChart");
   el.innerHTML = "";
-  for (const [deg, kg] of data) {
+  data.forEach(([deg, kg], i) => {
     const zone = deg <= 15 ? "ok" : deg <= 30 ? "warn" : "bad";
-    const grad = { ok: "linear-gradient(180deg,#5ee0a0,#1fb86a)", warn: "linear-gradient(180deg,#ffd166,#f5a524)", bad: "linear-gradient(180deg,#ff8a80,#f0483e)" }[zone];
     const d = document.createElement("div");
     d.className = "bar";
-    d.innerHTML = `<b>${kg}</b><i style="height:${kg / 27 * 130}px;background:${grad}"></i>${figure(deg, COLORS[zone])}<em>${deg}°</em>`;
+    d.innerHTML = `<b>${kg}</b><i style="height:${kg / 27 * 130}px;background:${grads[i]}"></i>${figure(deg, COLORS[zone])}<em>${deg}°</em>`;
     el.appendChild(d);
-  }
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -1020,9 +1027,9 @@ function renderCalc() {
   const zone = s.alpha <= L ? "ok" : "bad";
   $("calcFig").innerHTML = figure(Math.max(0, s.alpha), COLORS[s.alpha < 0 ? "warn" : zone], L);
   const v = $("rVerdict");
-  if (s.alpha < 0) { v.className = "status warn"; v.textContent = "⬇ Слишком высоко"; }
-  else if (s.alpha <= L) { v.className = "status ok"; v.textContent = "🙂 В норме"; }
-  else { v.className = "status bad"; v.textContent = "⬆ Поднимите платформу"; }
+  if (s.alpha < 0) { v.className = "status warn"; v.textContent = "↓ Слишком высоко"; }
+  else if (s.alpha <= L) { v.className = "status ok"; v.textContent = "В норме"; }
+  else { v.className = "status bad"; v.textContent = "↑ Поднимите платформу"; }
   drawCalcSvg(H, s, L);
   updateScreenAdvice();
 }
@@ -1038,10 +1045,9 @@ function updateScreenAdvice() {
   const need = screenDeg(solveTilt(Math.max(0, Number($("cH").value) || 0)).phi);
   const diff = need - cur;
   const ok = Math.abs(diff) < 5;
-  const arrow = diff > 0 ? "⤴ +" + diff + "°" : "⤵ −" + Math.abs(diff) + "°";
-  const icon = d.lid ? "💻" : "🖥";
-  el.innerHTML = `📷 ${icon} сейчас ≈ <b>${cur}°</b> → нужно <b>${need}°</b> ${ok ? "✓" : arrow}`;
-  setChip("chipScreen", ok ? "ok" : "warn", `${icon} ${cur}° → ${need}° ${ok ? "✓" : arrow}`);
+  const arrow = diff > 0 ? "↑ +" + diff + "°" : "↓ −" + Math.abs(diff) + "°";
+    el.innerHTML = `По камере: ${d.lid ? "крышка" : "монитор"} ≈ <b>${cur}°</b> → нужно <b>${need}°</b> ${ok ? "✓" : arrow}`;
+  setChip("chipScreen", ok ? "ok" : "warn", `Экран ${cur}° → ${need}° ${ok ? "✓" : arrow}`);
 }
 
 function drawCalcSvg(H, s, L) {
@@ -1059,15 +1065,15 @@ function drawCalcSvg(H, s, L) {
   const cone = [X(dist + 30), Y(EYE_H - (dist + 30) * Math.tan(L * Math.PI / 180))];
   const good = s.alpha <= L;
   $("calcSvg").innerHTML = `
-    <line x1="${X(-4)}" y1="${Y(0)}" x2="${X(xMax)}" y2="${Y(0)}" stroke="#7c8bb3" stroke-width="3" stroke-linecap="round"/>
-    <rect x="${X(dist - d.baseD)}" y="${Y(H)}" width="${(d.baseD + 2) * k}" height="${Math.max(1, H * k)}" rx="4" fill="#7c8bb3" opacity=".45"/>
-    <rect x="${X(dist - d.baseD)}" y="${Y(H + d.baseH)}" width="${d.baseD * k}" height="${d.baseH * k}" rx="2" fill="#fff" stroke="#9aa8cc"/>
-    <line x1="${X(hx)}" y1="${Y(hy)}" x2="${X(tx)}" y2="${Y(ty)}" stroke="#12203f" stroke-width="5" stroke-linecap="round"/>
-    <line x1="${X(0)}" y1="${Y(EYE_H)}" x2="${X(dist + 30)}" y2="${Y(EYE_H)}" stroke="#9aa8cc" stroke-dasharray="3 5"/>
-    <line x1="${X(0)}" y1="${Y(EYE_H)}" x2="${cone[0]}" y2="${cone[1]}" stroke="#1fb86a" stroke-dasharray="6 4" opacity=".7"/>
-    <line x1="${X(0)}" y1="${Y(EYE_H)}" x2="${X(cxs)}" y2="${Y(cys)}" stroke="${good ? "#1fb86a" : "#f0483e"}" stroke-width="3" stroke-linecap="round"/>
-    <circle cx="${X(0)}" cy="${Y(EYE_H)}" r="8" fill="#12203f"/>
-    <text x="${X(dist - d.baseD) + 6}" y="${Y(0) - 6}" fill="#5a6a90" font-size="12">${H} см</text>`;
+    <line x1="${X(-4)}" y1="${Y(0)}" x2="${X(xMax)}" y2="${Y(0)}" stroke="#a1a1aa" stroke-width="3" stroke-linecap="round"/>
+    <rect x="${X(dist - d.baseD)}" y="${Y(H)}" width="${(d.baseD + 2) * k}" height="${Math.max(1, H * k)}" rx="4" fill="#0a0a0b" opacity=".14"/>
+    <rect x="${X(dist - d.baseD)}" y="${Y(H + d.baseH)}" width="${d.baseD * k}" height="${d.baseH * k}" rx="2" fill="#fff" stroke="#a1a1aa"/>
+    <line x1="${X(hx)}" y1="${Y(hy)}" x2="${X(tx)}" y2="${Y(ty)}" stroke="#0a0a0b" stroke-width="5" stroke-linecap="round"/>
+    <line x1="${X(0)}" y1="${Y(EYE_H)}" x2="${X(dist + 30)}" y2="${Y(EYE_H)}" stroke="#a1a1aa" stroke-dasharray="3 5"/>
+    <line x1="${X(0)}" y1="${Y(EYE_H)}" x2="${cone[0]}" y2="${cone[1]}" stroke="#2f7d5b" stroke-dasharray="6 4" opacity=".7"/>
+    <line x1="${X(0)}" y1="${Y(EYE_H)}" x2="${X(cxs)}" y2="${Y(cys)}" stroke="${good ? "#2f7d5b" : "#b5423b"}" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="${X(0)}" cy="${Y(EYE_H)}" r="8" fill="#0a0a0b"/>
+    <text x="${X(dist - d.baseD) + 6}" y="${Y(0) - 6}" fill="#6b6b73" font-size="12">${H} см</text>`;
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,26 +1,63 @@
-/* Стикер-фигурка: профиль человека (смотрит вправо), голова наклонена вперёд
-   на `deg` градусов. Зелёный сектор — безопасная зона 0–15°: если нос внутри
-   сектора, всё хорошо. Понятно без слов. */
-export function figure(deg, color = "#12203f", limit = 15) {
+/* Фигурка: чёрный силуэт человека в профиль (смотрит вправо). Голова наклоняется
+   вперёд на `deg` градусов, шея изгибается вместе с ней. Светлый сектор —
+   безопасная зона 0–15°, тонкая дуга снаружи показывает текущее отклонение
+   (цвет дуги — состояние). Без слов понятно, где голова. */
+let uid = 0;
+
+// Плечи и грудь в профиль (спина слева, грудь справа); шея входит сверху.
+const TORSO = "M10 170 C10 142 24 126 46 118 C52 116 56 112 57 108 L69 108 C71 112 76 115 84 118 C100 124 110 137 114 152 L116 170 Z";
+
+// Голова в локальных координатах: начало — верх шеи (затылочный сустав), вверх = минус по y.
+const HEAD = [
+  "M-8 10 L-9 2",
+  "C-15 -1 -23 -11 -23 -27",           // затылок
+  "C-23 -45 -11 -56 4 -56",            // темя
+  "C15 -56 21 -47 21 -37",             // лоб
+  "C21 -34 22 -32 23 -29",             // надбровье
+  "L29 -20",                           // спинка носа
+  "C30 -18 29 -16 26 -16",             // кончик носа
+  "L21 -15",
+  "C22 -13 22 -11 20 -10",             // верхняя губа
+  "C21 -8 20 -7 19 -6",
+  "C20 -4 19 -2 16 -1",                // подбородок
+  "C14 2 8 4 3 3",                     // нижняя челюсть
+  "L8 12 L8 16 L-8 16 Z",              // горло; низ спрятан внутри шеи
+].join(" ");
+
+const W = 150, H = 170;
+const PX = 60, PY = 112;   // основание шеи
+const NECK = 17;           // длина шеи
+const R = 86;              // радиус сектора и дуги
+
+export function figure(deg, color = "#0a0a0b", limit = 15) {
+  const id = "f" + (++uid);
   const a = Math.max(-10, Math.min(70, deg));
-  const r = a * Math.PI / 180;
-  const px = 46, py = 86;                          // основание шеи
-  const dir = [Math.sin(r), -Math.cos(r)];         // направление «вверх по шее»
-  const at = (t) => [px + dir[0] * t, py + dir[1] * t];
-  const [nx, ny] = at(16);                         // верх шеи
-  const [hx, hy] = at(38);                         // центр головы
-  const sector = (deg2, len) => [px + len * Math.sin(deg2 * Math.PI / 180), py - len * Math.cos(deg2 * Math.PI / 180)];
-  const [sx, sy] = sector(limit, 72);
+  const rad = (d) => d * Math.PI / 180;
   const f = (n) => n.toFixed(1);
-  return `<svg viewBox="0 0 100 130" class="fig" aria-hidden="true">
-    <path d="M${px} ${py} L${px} ${py - 72} A72 72 0 0 1 ${f(sx)} ${f(sy)} Z" fill="#1fb86a" opacity=".28"/>
-    <line x1="${px}" y1="${py}" x2="${px}" y2="${py - 72}" stroke="#7c8bb3" stroke-width="1.5" stroke-dasharray="3 3"/>
-    <path d="M6 130 C6 106 22 94 ${px} ${py - 2} C70 94 88 106 88 130 Z" fill="${color}" opacity=".3"/>
-    <line x1="${px}" y1="${py}" x2="${f(nx)}" y2="${f(ny)}" stroke="${color}" stroke-width="16" stroke-linecap="round" opacity=".9"/>
-    <g transform="rotate(${f(a)} ${f(hx)} ${f(hy)})">
-      <ellipse cx="${f(hx)}" cy="${f(hy)}" rx="17" ry="20" fill="#fff" stroke="${color}" stroke-width="4"/>
-      <path d="M${f(hx + 14)} ${f(hy - 2)} l11 6 l-11 4z" fill="${color}"/>
-      <circle cx="${f(hx - 2)}" cy="${f(hy + 1)}" r="2.2" fill="${color}"/>
-    </g>
+  // шея наклоняется на половину угла головы, голова — на весь угол
+  const ax = PX + NECK * Math.sin(rad(a * 0.5)), ay = PY - NECK * Math.cos(rad(a * 0.5));
+  const pt = (d) => [PX + R * Math.sin(rad(d)), PY - R * Math.cos(rad(d))];
+  const [lx, ly] = pt(limit);
+  const [ex, ey] = pt(a);
+  const arc = a > 0.5
+    ? `<path d="M${PX} ${PY - R} A${R} ${R} 0 0 1 ${f(ex)} ${f(ey)}" fill="none" stroke="${color}" stroke-width="3.5" stroke-linecap="round"/>`
+    : "";
+  return `<svg viewBox="0 0 ${W} ${H}" class="fig" aria-hidden="true">
+    <defs>
+      <linearGradient id="${id}g" gradientUnits="userSpaceOnUse" x1="30" y1="20" x2="130" y2="170">
+        <stop offset="0" stop-color="#3d3d42"/><stop offset=".5" stop-color="#151517"/><stop offset="1" stop-color="#050506"/>
+      </linearGradient>
+      <mask id="${id}m" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}">
+        <g fill="#fff" stroke="none">
+          <path d="${TORSO}"/>
+          <line x1="${PX}" y1="${PY + 4}" x2="${f(ax)}" y2="${f(ay)}" stroke="#fff" stroke-width="21" stroke-linecap="round"/>
+          <path d="${HEAD}" transform="translate(${f(ax)} ${f(ay)}) rotate(${f(a)}) scale(1.14)"/>
+        </g>
+      </mask>
+    </defs>
+    <path d="M${PX} ${PY} L${PX} ${PY - R} A${R} ${R} 0 0 1 ${f(lx)} ${f(ly)} Z" fill="rgba(10,10,11,.08)"/>
+    <line x1="${PX}" y1="${PY}" x2="${PX}" y2="${PY - R - 5}" stroke="rgba(10,10,11,.28)" stroke-width="1.2" stroke-dasharray="3 3"/>
+    ${arc}
+    <rect width="${W}" height="${H}" fill="url(#${id}g)" mask="url(#${id}m)"/>
   </svg>`;
 }
