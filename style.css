@@ -242,3 +242,17 @@ html[data-platform="windows"] body { background: linear-gradient(135deg, #cdeeff
 .pickCard.mine { outline: 3px solid rgba(31, 184, 106, .55); outline-offset: 2px; }
 [hidden] { display: none !important; }
 .figLive { width: 84px; } .figBig { width: 104px; }
+
+/* ===== v4: подготовка, наушники, фоновое окно ===== */
+.prep { position: absolute; left: 12px; right: 12px; top: 12px; z-index: 3; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.prep .chip { background: rgba(20, 30, 60, .5); color: #fff; border-color: rgba(255, 255, 255, .3); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.prep .chip.ok { background: rgba(31, 184, 106, .75); }
+.prep .chip.warn { background: rgba(245, 165, 36, .8); }
+.prep .chip.bad { background: rgba(240, 72, 62, .8); }
+.prep .btn { margin-left: auto; }
+.stage.noCam::after { content: "🎧"; position: absolute; inset: 0; display: grid; place-items: center; font-size: 96px; z-index: 1; opacity: .85; }
+
+.pipRoot { padding: 14px; text-align: center; min-height: 100vh; margin: 0; }
+.pipRoot .figLive { width: 96px; margin: 0 auto; }
+.pipRoot .big { font-size: 48px; }
+.pipRoot .alertBanner { position: static; margin-bottom: 8px; font-size: 18px; }

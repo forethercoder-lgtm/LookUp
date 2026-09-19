@@ -71,6 +71,7 @@
         </div>
         <div id="rVerdict" class="status idle">—</div>
         <div id="lidNow" class="lidNow">📷 Угол экрана измерю камерой</div>
+        <div id="distNow" class="lidNow"></div>
       </div>
     </div>
   </div>
@@ -84,6 +85,14 @@
       <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
       <div id="alertBanner" class="alertBanner" hidden>⬆ Голову выше!</div>
+      <div id="prep" class="prep" hidden>
+        <span id="pFace" class="chip">👤</span>
+        <span id="pDist" class="chip">📏</span>
+        <span id="pFrame" class="chip">🖼</span>
+        <span id="pSh" class="chip">🧍</span>
+        <span id="pLight" class="chip">💡</span>
+        <button id="btnSkip" class="btn ghost small">Пропустить →</button>
+      </div>
       <div id="stageMsg" class="stageMsg">▶ Нажмите «Старт»</div>
     </div>
 
@@ -98,11 +107,17 @@
         <span id="chipHead" class="chip">Голова</span>
         <span id="chipSh" class="chip">Плечи</span>
         <span id="chipScreen" class="chip">Экран</span>
+        <span id="chipImu" class="chip">🎧 —</span>
       </div>
 
       <div class="row">
         <button id="btnStart" class="btn">▶ Старт</button>
         <button id="btnCalib" class="btn ghost" disabled>↻ Заново</button>
+      </div>
+      <div class="row">
+        <button id="btnPhones" class="btn ghost small">🎧 Наушники</button>
+        <button id="btnNoCam" class="btn ghost small">🎧 Без камеры</button>
+        <button id="btnPip" class="btn ghost small">🪟 Фон</button>
       </div>
 
       <div id="simBox" hidden>

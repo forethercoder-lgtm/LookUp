@@ -1,4 +1,3 @@
 node_modules/
 .vercel/
-
-.vercel
+bridge/mac/lookup-bridge
