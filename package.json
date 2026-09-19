@@ -1,0 +1,9 @@
+{
+  "name": "lookup",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test tests/stats.test.mjs tests/geometry.test.mjs tests/spine.test.mjs"
+  }
+}

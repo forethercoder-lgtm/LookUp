@@ -158,6 +158,65 @@
     </div>
   </section>
   <section>
+    <h2>Статистика точности и регуляторика</h2>
+    <div class="srcGrid">
+      <article class="card glass srcItem">
+        <div class="srcMeta">
+          <span class="chip ok">Проверено на странице</span>
+          <span class="srcOrg">Journal of Chiropractic Medicine</span>
+        </div>
+        <h3><a href="https://pubmed.ncbi.nlm.nih.gov/27330520/" target="_blank" rel="noopener">Koo T. K., Li M. Y., 2016 — Guideline of selecting and reporting intraclass correlation coefficients</a></h3>
+        <p>ICC меньше 0,5 — низкая надёжность, 0,5–0,75 — умеренная, 0,75–0,9 — хорошая, больше 0,9 — отличная; оценивать по 95% доверительному интервалу, а не по точечному значению; указывать модель, тип и определение ICC.</p>
+        <p class="srcUse"><b>В LookUp:</b> Трактовка ICC на странице «Замер»: по нижней границе 95% ДИ.</p>
+      </article>
+      <article class="card glass srcItem">
+        <div class="srcMeta">
+          <span class="chip ok">Проверено на странице</span>
+          <span class="srcOrg">BMC Medical Research Methodology; PMC5964973</span>
+        </div>
+        <h3><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5964973/" target="_blank" rel="noopener">Доверительные интервалы границ согласия Bland–Altman: приближённые и точные методы</a></h3>
+        <p>Приближённые интервалы Bland–Altman для малых выборок (N 10–30) не держат заявленное покрытие; предпочтительны точные интервалы на основе допусковых множителей.</p>
+        <p class="srcUse"><b>В LookUp:</b> Кроме 95% границ согласия показываем допусковый интервал «95% ошибок с уверенностью 95%» (множитель Howe, проверен по таблицам).</p>
+      </article>
+      <article class="card glass srcItem">
+        <div class="srcMeta">
+          <span class="chip warn">По выдаче поиска</span>
+          <span class="srcOrg">Journal of Clinical Monitoring and Computing</span>
+        </div>
+        <h3><a href="https://link.springer.com/article/10.1007/s10877-022-00853-x" target="_blank" rel="noopener">Определение размера выборки в исследованиях сравнения методов и повторяемости</a></h3>
+        <p>Ориентир: около 50 участников с тремя повторами каждым методом; границы согласия при малых выборках ненадёжны, нужны их доверительные интервалы.</p>
+        <p class="srcUse"><b>В LookUp:</b> Предупреждение «участников N из ~50» на странице «Замер».</p>
+      </article>
+      <article class="card glass srcItem">
+        <div class="srcMeta">
+          <span class="chip ok">Проверено на странице</span>
+          <span class="srcOrg">PMC8183562</span>
+        </div>
+        <h3><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC8183562/" target="_blank" rel="noopener">Надёжность устройства CROM (шейный отдел): SEM и MDC</a></h3>
+        <p>SEM 2,2–3,1°, MDC90 3,6–5,1°, ICC 0,65–0,90 для вращения шеи (клиническое устройство с инклинометрами).</p>
+        <p class="srcUse"><b>В LookUp:</b> Масштаб для сравнения: какая ошибка типична даже у клинических инструментов.</p>
+      </article>
+      <article class="card glass srcItem">
+        <div class="srcMeta">
+          <span class="chip warn">По выдаче поиска</span>
+          <span class="srcOrg">Psychological Bulletin; пример в документации R-пакета psych</span>
+        </div>
+        <h3><a href="https://www.rdocumentation.org/packages/psych/versions/2.1.9/topics/ICC" target="_blank" rel="noopener">Shrout P. E., Fleiss J. L., 1979 — Intraclass correlations: uses in assessing rater reliability</a></h3>
+        <p>Эталонный набор 6 объектов × 4 эксперта: ICC(1,1) = 0,17, ICC(2,1) = 0,29, ICC(3,1) = 0,71.</p>
+        <p class="srcUse"><b>В LookUp:</b> Тест формул ICC в tests/stats.test.mjs (точечные значения подтверждены; границы ДИ сверены по формулам McGraw &amp; Wong, при клиническом использовании перепроверьте в R: psych::ICC).</p>
+      </article>
+      <article class="card glass srcItem">
+        <div class="srcMeta">
+          <span class="chip ok">Проверено на странице</span>
+          <span class="srcOrg">Управление по санитарному надзору за качеством пищевых продуктов и медикаментов (США), обновлено 06.01.2026</span>
+        </div>
+        <h3><a href="https://www.fda.gov/regulatory-information/search-fda-guidance-documents/general-wellness-policy-low-risk-devices" target="_blank" rel="noopener">FDA — General Wellness: Policy for Low Risk Devices</a></h3>
+        <p>Продукты для поддержания здорового образа жизни, не связанные с диагностикой, лечением, смягчением или профилактикой заболеваний, — «general wellness»; заявления о диагностике или лечении делают продукт медицинским устройством.</p>
+        <p class="srcUse"><b>В LookUp:</b> LookUp позиционируется как wellness-инструмент осанки; медицинские заявления запрещены, для клинического применения нужны валидация и регуляторный путь.</p>
+      </article>
+    </div>
+  </section>
+  <section>
     <h2>Ограничения</h2>
     <div class="card glass">
       <ul class="plain"><li>Прямая связь «наклон головы → боль в шее» в исследованиях неоднозначна: говорим о профилактике нагрузки, не о лечении.</li><li>Числа нагрузки на шею — результат расчётной модели, а не измерение на людях.</li><li>Независимых данных об угловой точности головной позы MediaPipe не найдено: точность проверяется собственным замером (/measure/).</li><li>Записи лекций врачей не просматривались (инструмент читает только текст). Присылайте ссылки или субтитры — добавим.</li><li>LookUp не медицинское устройство, не диагностирует и не лечит.</li></ul>

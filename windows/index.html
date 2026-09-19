@@ -20,6 +20,7 @@
   <nav>
     <a href="#setup">Экран</a>
     <a href="#live">Контроль</a>
+    <a href="#spine">Позвоночник</a>
     <a href="#experiment">Тест</a>
     <a href="../sources/">Источники</a>
     <a href="../">Система</a>
@@ -95,10 +96,12 @@
         <span id="pFace" class="chip">Лицо</span>
         <span id="pDist" class="chip">Дистанция</span>
         <span id="pFrame" class="chip">Кадр</span>
+        <span id="pAim" class="chip">Ось</span>
         <span id="pSh" class="chip">Плечи</span>
         <span id="pLight" class="chip">Свет</span>
         <button id="btnSkip" class="btn ghost small">Пропустить</button>
       </div>
+      <div id="prepIcon" class="prepIcon" hidden></div>
       <div id="stageMsg" class="stageMsg">Нажмите «Старт»</div>
     </div>
 
@@ -149,6 +152,39 @@
         </div>
       </details>
     </div>
+  </div>
+</section>
+
+<!-- ============ МОДЕЛЬ ПОЗВОНОЧНИКА ============ -->
+<section id="spine">
+  <h2>Модель позвоночника</h2>
+  <div class="spineGrid">
+    <div class="card glass">
+      <h3>Сбоку</h3>
+      <div id="spineSide" class="spineBox"></div>
+      <p id="spineGhostNote" class="note">Тень: нейтраль</p>
+    </div>
+    <div class="card glass">
+      <h3>Спереди · как в зеркале</h3>
+      <div id="spineFront" class="spineBox"></div>
+      <div class="chips">
+        <span id="swShoulders" class="chip">Плечи</span>
+        <span id="swHead" class="chip">Голова</span>
+      </div>
+    </div>
+  </div>
+  <div class="card glass">
+    <div class="metrics">
+      <div class="metric"><b id="mHeadFlex">—</b><span>наклон головы</span></div>
+      <div class="metric"><b id="mCerv">—</b><span>шея C2–C7</span></div>
+      <div class="metric"><b id="mThor">—</b><span>добавка кифоза (плечи)</span></div>
+      <div class="metric"><b id="mLoad">—</b><span>нагрузка, кг (модель)</span></div>
+    </div>
+    <div class="row">
+      <button id="spineSnap" class="btn small">Запомнить позу</button>
+      <button id="spineClear" class="btn ghost small">Сравнивать с нейтралью</button>
+    </div>
+    <p class="note">Схема, а не снимок и не диагностика: типичные кифоз и лордоз выбраны для наглядности. Тень — нейтраль или запомненная поза, цвет позвонка — насколько он сместился.</p>
   </div>
 </section>
 

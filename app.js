@@ -1,5 +1,7 @@
 import { FaceLandmarker, PoseLandmarker, FilesetResolver } from "./vendor/vision_bundle.mjs";
 import { figure } from "./figure.js";
+import { pitchFromMatrix, yawFromMatrix, mirroredTilt, distanceFromIpd, solveTilt as solveTiltCore } from "./geometry.js";
+import { buildSpine, renderSide, renderFront, sideWords } from "./spine.js";
 
 const $ = (id) => document.getElementById(id);
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -31,6 +33,8 @@ const IPD_CM = 6.3;            // среднее расстояние между
 const DIST_OK = [46, 76];      // 18–30 дюймов: OSHA, NIOSH ≥ 18 in, Mayo 20–30 in, CCOHS 40–74 см (см. sources.json)
 const FACE_Y_OK = [0.28, 0.58];// где в кадре должно быть лицо (доля высоты)
 const LUMA_MIN = 55;           // минимальная яркость кадра (0–255)
+const AIM_MAX = 0.14;            // лицо смещено от центра кадра больше чем на 14 % ширины — повернуть ноутбук
+const YAW_PREP_MAX = 18;       // голова повёрнута в сторону больше чем на 18° при подготовке
 const PREP_HOLD_MS = 1200;
 const PREP_SHOULDERS_MS = 6000;// плечи обязательны только первые секунды подготовки
 const PREP_TIMEOUT_MS = 12000;
@@ -155,17 +159,6 @@ function sirenSet(on) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Голова: pitch и yaw из матрицы позы лица                            */
-/* ------------------------------------------------------------------ */
-// data — column-major 4x4; столбец 2 = направление «вперёд» лица.
-// Знак pitch уточняется кивком при калибровке, поэтому он условный.
-function pitchFromMatrix(d) {
-  const n = Math.hypot(d[8], d[9], d[10]) || 1;
-  return -Math.asin(Math.max(-1, Math.min(1, d[9] / n))) * 180 / Math.PI;
-}
-const yawFromMatrix = (d) => Math.atan2(d[8], d[10]) * 180 / Math.PI;
-
-/* ------------------------------------------------------------------ */
 /* Ключицы и плечи (MediaPipe Pose)                                    */
 /* В Pose нет отдельных точек ключиц, поэтому линия ключиц — это       */
 /* плечи + основание шеи между ними; наклон линии = перекос.           */
@@ -181,7 +174,8 @@ function shoulderMetrics(res, now) {
   const head = ((ls.y + rs.y) / 2 - nose.y) / w; // выше плеч = больше (идея PosturePal)
   let roll = Math.abs(Math.atan2(ls.y - rs.y, ls.x - rs.x) * 180 / Math.PI);
   if (roll > 90) roll = 180 - roll;
-  return { head, w, roll, at: now };
+  const tiltS = mirroredTilt({ x: 1 - ls.x, y: ls.y }, { x: 1 - rs.x, y: rs.y }); // как в превью: + правое плечо ниже
+  return { head, w, roll, tiltS, at: now };
 }
 
 function smoothShoulders(m) {
@@ -191,6 +185,7 @@ function smoothShoulders(m) {
     head: o.head + k * (m.head - o.head),
     w: o.w + k * (m.w - o.w),
     roll: o.roll + k * (m.roll - o.roll),
+    tiltS: o.tiltS + k * (m.tiltS - o.tiltS),
     at: m.at,
   } : m;
 }
@@ -400,58 +395,81 @@ function beginPrepare() {
   msg("Сядьте перед камерой");
 }
 
+// Иконки-подсказки (вид сбоку и сверху), рисуются поверх кадра
+const ICONS = {
+  tiltIn: '<svg viewBox="0 0 64 48"><circle cx="8" cy="22" r="4" fill="#fff" stroke="none"/><line x1="16" y1="40" x2="48" y2="40"/><line x1="48" y1="40" x2="43" y2="10"/><path d="M56 12 Q46 2 32 8"/><path d="M37 3 L32 8 L38 12"/></svg>',
+  tiltOut: '<svg viewBox="0 0 64 48"><circle cx="8" cy="22" r="4" fill="#fff" stroke="none"/><line x1="16" y1="40" x2="42" y2="40"/><line x1="42" y1="40" x2="47" y2="10"/><path d="M28 8 Q42 2 56 12"/><path d="M50 8 L56 12 L51 17"/></svg>',
+  rotL: '<svg viewBox="0 0 64 48"><g transform="rotate(-20 32 12)"><line x1="12" y1="12" x2="52" y2="12" stroke-width="5"/></g><circle cx="32" cy="40" r="5" fill="#fff" stroke="none"/><path d="M10 26 Q6 16 12 8"/><path d="M6 12 L12 8 L14 15"/></svg>',
+  rotR: '<svg viewBox="0 0 64 48"><g transform="rotate(20 32 12)"><line x1="12" y1="12" x2="52" y2="12" stroke-width="5"/></g><circle cx="32" cy="40" r="5" fill="#fff" stroke="none"/><path d="M54 26 Q58 16 52 8"/><path d="M58 12 L52 8 L50 15"/></svg>',
+  closer: '<svg viewBox="0 0 64 48"><line x1="12" y1="8" x2="52" y2="8" stroke-width="5"/><circle cx="32" cy="42" r="5" fill="#fff" stroke="none"/><line x1="32" y1="16" x2="32" y2="30"/><path d="M26 25 L32 31 L38 25"/></svg>',
+  farther: '<svg viewBox="0 0 64 48"><line x1="12" y1="8" x2="52" y2="8" stroke-width="5"/><circle cx="32" cy="42" r="5" fill="#fff" stroke="none"/><line x1="32" y1="30" x2="32" y2="16"/><path d="M26 21 L32 15 L38 21"/></svg>',
+};
+function showPrepIcon(kind) {
+  const el = $("prepIcon");
+  if (!el) return;
+  el.hidden = !kind;
+  if (kind) el.innerHTML = ICONS[kind];
+}
+
 // Время подготовки считаем по тикам (dt ограничен), а не по часам: первый прогон
 // моделей может на секунды заблокировать страницу, это не должно съедать таймаут.
 function evalPrep(now, g, dt) {
   const d = st.det;
   st.prepT += dt * 1000;
   const items = {};
-  let hint = null;
+  let hint = null, icon = null;
+  const say = (text, ic) => { if (!hint) { hint = text; icon = ic ?? null; } };
 
   const faceOk = !!d;
   items.pFace = faceOk ? ["ok", "Лицо"] : ["bad", "Нет лица"];
-  if (!faceOk) hint = "Сядьте перед камерой";
+  if (!faceOk) say("Сядьте перед камерой");
 
-  let distOk = false, frameOk = false;
+  let distOk = false, frameOk = false, aimOk = false;
   if (d) {
     // расстояние до экрана по расстоянию между зрачками
     if (d.ipdPx && Math.abs(d.yaw) < 20) {
-      const f = (g.W / 2) / Math.tan(HFOV_DEG * Math.PI / 360);
-      const cm = f * IPD_CM / d.ipdPx * distK();
-      st.distSamples.push(cm);
+      st.distSamples.push(distanceFromIpd(d.ipdPx, g.W, HFOV_DEG, IPD_CM) * distK());
       if (st.distSamples.length > 30) st.distSamples.shift();
     }
     const cm = st.distSamples.length ? median(st.distSamples) : null;
     if (cm === null) items.pDist = ["", "Дистанция …"];
-    else if (cm < DIST_OK[0]) { items.pDist = ["warn", `${Math.round(cm)} см · дальше`]; hint = hint || "↔ Отодвиньте экран от себя"; }
-    else if (cm > DIST_OK[1]) { items.pDist = ["warn", `${Math.round(cm)} см · ближе`]; hint = hint || "↔ Придвиньте экран к себе"; }
+    else if (cm < DIST_OK[0]) { items.pDist = ["warn", `${Math.round(cm)} см · дальше`]; say("Отодвиньте экран от себя", "farther"); }
+    else if (cm > DIST_OK[1]) { items.pDist = ["warn", `${Math.round(cm)} см · ближе`]; say("Придвиньте экран к себе", "closer"); }
     else { distOk = true; items.pDist = ["ok", `${Math.round(cm)} см`]; }
     if (cm === null) distOk = true; // нет оценки — не блокируем
 
-    // положение лица в кадре: камера должна смотреть на лицо
+    // положение лица по вертикали: лицо низко — камера смотрит выше лица → экран на себя; высоко → от себя
     const fy = (d.lm[10].y + d.lm[152].y) / 2;
-    if (fy > FACE_Y_OK[1]) { items.pFrame = ["warn", "Кадр ↓ прикройте"]; hint = hint || "↓ Прикройте экран (наклон вперёд)"; }
-    else if (fy < FACE_Y_OK[0]) { items.pFrame = ["warn", "Кадр ↑ откройте"]; hint = hint || "↑ Откройте экран (наклон назад)"; }
+    if (fy > FACE_Y_OK[1]) { items.pFrame = ["warn", "Кадр · на себя"]; say("Наклоните экран на себя", "tiltIn"); }
+    else if (fy < FACE_Y_OK[0]) { items.pFrame = ["warn", "Кадр · от себя"]; say("Наклоните экран от себя", "tiltOut"); }
     else { frameOk = true; items.pFrame = ["ok", "Кадр"]; }
+
+    // положение лица по горизонтали (в превью): человек слева/справа от оси камеры → повернуть ноутбук к нему
+    const dx = d.fx - 0.5;
+    if (dx < -AIM_MAX) { items.pAim = ["warn", "Ось · влево"]; say("Поверните ноутбук влево", "rotL"); }
+    else if (dx > AIM_MAX) { items.pAim = ["warn", "Ось · вправо"]; say("Поверните ноутбук вправо", "rotR"); }
+    else if (Math.abs(d.yaw) > YAW_PREP_MAX) { items.pAim = ["warn", "Смотрите прямо"]; say("Смотрите прямо на экран"); }
+    else { aimOk = true; items.pAim = ["ok", "Ось"]; }
   } else {
-    items.pDist = ["", "Дистанция"]; items.pFrame = ["", "Кадр"];
+    items.pDist = ["", "Дистанция"]; items.pFrame = ["", "Кадр"]; items.pAim = ["", "Ось"];
   }
 
   const shSeen = st.pts && now - st.pts.at < SHOULDER_STALE_MS;
   const shNeeded = !!st.pose && st.prepT < PREP_SHOULDERS_MS;
   if (!st.pose) items.pSh = ["", "Плечи"];
   else if (shSeen) items.pSh = ["ok", "Плечи"];
-  else { items.pSh = ["warn", "Плеч не видно"]; if (d) hint = hint || "Плеч не видно — отодвиньтесь или прикройте экран"; }
+  else { items.pSh = ["warn", "Плеч не видно"]; if (d) say("Плеч не видно: отодвиньтесь или наклоните экран на себя", "tiltIn"); }
 
   const luma = frameLuma(g.img, g.W, g.H);
   const lightOk = luma >= LUMA_MIN;
   items.pLight = lightOk ? ["ok", "Свет"] : ["bad", "Темно"];
-  if (!lightOk) hint = hint || "Добавьте света";
+  if (!lightOk) say("Добавьте света");
 
   for (const id in items) setChip(id, items[id][0], items[id][1]);
-  const ready = faceOk && distOk && frameOk && lightOk && (shSeen || !shNeeded);
+  const ready = faceOk && distOk && frameOk && aimOk && lightOk && (shSeen || !shNeeded);
   $("stageMsg").textContent = ready ? "Отлично — держитесь так" : (hint || "…");
   setStatus("idle", $("stageMsg").textContent);
+  showPrepIcon(ready ? null : icon);
 
   if (ready) {
     if (!st.prepOkSince) st.prepOkSince = now;
@@ -462,6 +480,7 @@ function evalPrep(now, g, dt) {
 
 function endPrepare() {
   $("prep").hidden = true;
+  showPrepIcon(null);
   if (st.distSamples.length >= 5) {
     const cm = Math.round(median(st.distSamples));
     distOverride = Math.max(35, Math.min(90, cm));
@@ -538,9 +557,12 @@ function detect(g, now) {
     if (lm.length >= 478) ipdPx = Math.hypot((lm[468].x - lm[473].x) * g.W, (lm[468].y - lm[473].y) * g.H);
     const yaw = yawFromMatrix(m.data);
     st.det = { pitch: pitchFromMatrix(m.data), yaw, lm, ipdPx, ipdN: ipdPx ? ipdPx / g.W : null, at: now, W: g.W, H: g.H };
+    // наклон головы вбок и положение лица — в зеркальных координатах, как в превью
+    const headTilt = mirroredTilt({ x: 1 - lm[263].x, y: lm[263].y }, { x: 1 - lm[33].x, y: lm[33].y });
+    st.det.headTilt = headTilt;
+    st.det.fx = 1 - (lm[10].x + lm[152].x) / 2;
     if (ipdPx && Math.abs(yaw) < 20) { // расстояние до экрана по зрачкам (нужна поправка distK)
-      const f = (g.W / 2) / Math.tan(HFOV_DEG * Math.PI / 360);
-      const cm = f * IPD_CM / ipdPx;
+      const cm = distanceFromIpd(ipdPx, g.W, HFOV_DEG, IPD_CM);
       st.distRaw = st.distRaw === null ? cm : st.distRaw * 0.8 + cm * 0.2;
     }
   } else st.det = null;
@@ -593,6 +615,7 @@ function tick(now) {
   paintImuChip(now);
   updateSitTimer(now);
   updatePip();
+  renderSpine(now);
 }
 
 function handleSample({ cam, imu }, dt, now) {
@@ -904,6 +927,54 @@ function updatePip() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Модель позвоночника (схема) по наклону головы и плечам              */
+/* ------------------------------------------------------------------ */
+let lastSpine = 0, spineSnap = null;
+// индекс сутулости 0…1,5: 1 — порог «сутулость» (голова опустилась к плечам или плечи стали шире в кадре)
+function slouchIndex(now) {
+  const s = st.sh;
+  if (!s || !st.base || now - s.at > SHOULDER_STALE_MS) return null;
+  const a = (1 - s.head / st.base.head) / (1 - SLOUCH_ENTER);
+  const b = (s.w / st.base.w - 1) / (LEAN_ENTER - 1);
+  return Math.max(0, Math.min(1.5, Math.max(a, b)));
+}
+function currentSpineInput(now) {
+  const on = st.phase === "monitoring";
+  const si = on ? slouchIndex(now) : null;
+  return {
+    headFlex: on && st.angle !== null ? st.angle : 0,
+    slouch: si ?? 0,
+    shoulderTilt: on && st.sh && now - st.sh.at < SHOULDER_STALE_MS ? st.sh.tiltS : 0,
+    headTilt: on && st.det && now - st.det.at < DET_FRESH_MS ? st.det.headTilt ?? 0 : 0,
+    shoulders: si !== null,
+  };
+}
+function renderSpine(now) {
+  if (!$("spineSide") || now - lastSpine < 200) return;
+  lastSpine = now;
+  const inp = currentSpineInput(now);
+  const cur = buildSpine(inp);
+  $("spineSide").innerHTML = renderSide(cur, spineSnap ? buildSpine(spineSnap) : null);
+  $("spineFront").innerHTML = renderFront(inp);
+  const w = sideWords(inp.shoulderTilt, inp.headTilt);
+  $("swShoulders").textContent = st.phase === "monitoring" && st.sh ? w.sh : "Плечи";
+  $("swHead").textContent = st.phase === "monitoring" ? w.hd : "Голова";
+  const m = cur.metrics;
+  const sgn = (v) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)) + "°";
+  $("mHeadFlex").textContent = Math.round(m.headFlex) + "°";
+  $("mCerv").textContent = sgn(m.cervFlex);
+  $("mThor").textContent = inp.shoulders ? sgn(m.dK) : "—";
+  $("mLoad").textContent = m.loadKg.toFixed(0);
+  $("spineGhostNote").textContent = spineSnap ? `Тень: запомненная поза (${Math.round(spineSnap.headFlex)}°)` : "Тень: нейтраль";
+}
+$("spineSnap")?.addEventListener("click", () => {
+  const i = currentSpineInput(performance.now());
+  spineSnap = { headFlex: i.headFlex, slouch: i.slouch };
+  lastSpine = 0;
+});
+$("spineClear")?.addEventListener("click", () => { spineSnap = null; lastSpine = 0; });
+
+/* ------------------------------------------------------------------ */
 /* Тест «с / без»                                                      */
 /* ------------------------------------------------------------------ */
 const RUNS_KEY = "lookup.runs.v2";
@@ -1016,17 +1087,7 @@ function renderLoadChart() {
    считаем итерациями. У монитора φ ограничен (maxPhi). */
 function solveTilt(H) {
   const d = dev();
-  const off = d.bezel + d.panel / 2;
-  let phi = 0, alpha = 0;
-  for (let i = 0; i < 30; i++) {
-    const r = phi * Math.PI / 180;
-    const cy = H + d.baseH + off * Math.cos(r);
-    const dc = distNow() + off * Math.sin(r);
-    alpha = Math.atan2(EYE_H - cy, dc) * 180 / Math.PI; // >0: смотрим вниз
-    phi = Math.max(0, Math.min(d.maxPhi, alpha));
-  }
-  const r = phi * Math.PI / 180;
-  return { phi, alpha, top: H + d.baseH + (d.bezel + d.panel) * Math.cos(r) };
+  return solveTiltCore({ H, eyeH: EYE_H, dist: distNow(), panel: d.panel, bezel: d.bezel, baseH: d.baseH, maxPhi: d.maxPhi });
 }
 
 function bestHeight() { // максимальная высота, при которой верх экрана не выше глаз
@@ -1070,9 +1131,9 @@ function updateScreenAdvice() {
   const need = screenDeg(solveTilt(Math.max(0, Number($("cH").value) || 0)).phi);
   const diff = need - cur;
   const ok = Math.abs(diff) < 5;
-  const arrow = diff > 0 ? "↑ +" + diff + "°" : "↓ −" + Math.abs(diff) + "°";
-  el.innerHTML = `${manual !== null ? "Вы ввели" : "По камере"}: ${d.lid ? "крышка" : "монитор"} ≈ <b>${cur}°</b> → нужно <b>${need}°</b> ${ok ? "✓" : arrow}`;
-  setChip("chipScreen", ok ? "ok" : "warn", `Экран ${cur}° → ${need}° ${ok ? "✓" : arrow}`);
+  const arrow = diff > 0 ? `экран от себя на ${diff}°` : `экран на себя на ${Math.abs(diff)}°`;
+  el.innerHTML = `${manual !== null ? "Вы ввели" : "По камере"}: ${d.lid ? "крышка" : "монитор"} ≈ <b>${cur}°</b> → нужно <b>${need}°</b> ${ok ? "✓" : "— наклоните " + arrow}`;
+  setChip("chipScreen", ok ? "ok" : "warn", `Экран ${cur}° → ${need}° ${ok ? "✓" : "· " + arrow}`);
 }
 
 function drawCalcSvg(H, s, L) {
