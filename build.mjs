@@ -21,7 +21,7 @@ const targets = {
   windows: { TITLE: "LookUp для Windows", BADGE: "Windows", PLATFORM: "windows", BODYCLASS: "", NAV: NAV_APP, PRE_LIVE: "", POST_LIVE: "", EXTRA_SCRIPT: "" },
   measure: {
     TITLE: "LookUp — замер точности", BADGE: "Замер", PLATFORM: "mac", BODYCLASS: "measurePage", NAV: NAV_MEASURE,
-    PRE_LIVE: preLive, POST_LIVE: postLive, EXTRA_SCRIPT: '<script type="module" src="../measure.js"></script>',
+    PRE_LIVE: preLive, POST_LIVE: postLive, EXTRA_SCRIPT: ['<script type="module" src="../measure.js"></script>', '<script type="module" src="../measure-guide.js"></script>'].join("\n"),
   },
 };
 

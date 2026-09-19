@@ -107,6 +107,7 @@ function recordHead(i, btn) {
     return;
   }
   say(`Строка «${rows[i].name}»: не двигайтесь ${REC_SECONDS} секунды, помощник снимает фото.`);
+  window.__frameNote?.(`Строка «${rows[i].name}»: не двигайтесь, помощник снимает фото`, REC_SECONDS);
   sample(() => S().angleRaw, btn, (vals) => {
     if (vals.length < 10) { say("Мало данных — лицо не видно? Повторите."); return; }
     rows[i].app = median(vals);
@@ -308,6 +309,7 @@ $("distRec").onclick = () => {
   const ref = parseFloat($("distRef").value);
   if (!Number.isFinite(ref)) { $("distResult").textContent = "Сначала введите расстояние по рулетке."; return; }
   if (!s || s.source !== "cam" || s.distRaw === null) { $("distResult").textContent = "Нужна работающая камера: нажмите «Старт» выше и смотрите на экран."; return; }
+  window.__frameNote?.("Смотрите на экран, не двигайтесь", REC_SECONDS);
   sample(() => S().distRaw, $("distRec"), (vals) => {
     if (vals.length < 10) { $("distResult").textContent = "Мало данных — лицо не видно."; return; }
     dists.push({ ref, est: mean(vals) });
@@ -375,3 +377,9 @@ $("repCsv").onclick = () => {
 
 renderRows();
 renderDist();
+
+// API для пошагового замера в кадре (measure-guide.js)
+window.__measure = {
+  MAX_SPREAD, median,
+  setApp(i, app, spread) { if (!rows[i]) return; rows[i].app = app; rows[i].spread = spread; sel = i; renderRows(); },
+};
