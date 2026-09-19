@@ -780,7 +780,8 @@ function connectPhones() {
   let ws;
   try { ws = new WebSocket(IMU_URL); } catch { st.retry = setTimeout(connectPhones, 3000); return; }
   st.ws = ws;
-  ws.onopen = () => paintImuChip(performance.now());
+  let opened = false;
+  ws.onopen = () => { opened = true; paintImuChip(performance.now()); };
   ws.onmessage = (e) => {
     try {
       const m = JSON.parse(e.data);
@@ -790,6 +791,11 @@ function connectPhones() {
   ws.onclose = () => {
     st.ws = null;
     paintImuChip(performance.now());
+    // с https-сайта Chrome блокирует localhost, пока не разрешена «локальная сеть»
+    if (!opened && !st.source && location.protocol === "https:" && !st.wsHinted) {
+      st.wsHinted = true;
+      msg("🎧 Мост не найден. Разрешите доступ к локальной сети или откройте localhost:8080");
+    }
     if (st.imuWanted) st.retry = setTimeout(connectPhones, 2000);
   };
   ws.onerror = () => {};
