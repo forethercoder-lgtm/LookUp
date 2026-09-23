@@ -10,7 +10,8 @@ const ROOT = new URL("./", import.meta.url).href; // работает и из /m
 const PLATFORM = document.documentElement.dataset.platform === "windows" ? "windows" : "mac";
 
 const GAUGE_MAX = 60;          // градусов на шкале
-const CALIB_MS = 3000;         // калибровка: смотрим вдаль
+const CALIB_MIN_N = 8;         // калибровка «смотрим вдаль»: достаточно отсчётов для медианы — без фикс. задержки
+const CALIB_TIMEOUT_MS = 4000; // потолок на случай, если лицо/наушники не видны стабильно
 const NOD_MIN = 8;             // кивок вниз минимум на столько градусов
 const NOD_TIMEOUT_MS = 6000;
 const CALIB_MAX_SPREAD = 4;    // разброс значений при калибровке (P90−P10), °
@@ -621,7 +622,7 @@ function tick(now) {
   updateSitTimer(now);
   updatePip();
   renderSpine(now);
-  if (st.phase === "monitoring" && now - lastInsightsRender > 2000) { lastInsightsRender = now; renderInsights(); }
+  if (st.phase === "monitoring" && now - lastInsightsRender > 2000) { lastInsightsRender = now; renderInsights(); checkpointSession(); }
 }
 let lastInsightsRender = 0;
 
@@ -632,7 +633,9 @@ function handleSample({ cam, imu }, dt, now) {
     if (imu !== null) st.calibImu.push(imu);
     if (st.sh && now - st.sh.at < SHOULDER_STALE_MS) { st.calibHead.push(st.sh.head); st.calibW.push(st.sh.w); }
     if (st.det?.ipdN) st.calibIpd.push(st.det.ipdN);
-    if (now - st.calibStart >= CALIB_MS) beginNod();
+    // не ждём фиксированные 3 с: как только набрали достаточно отсчётов — калибруемся сразу
+    const n = Math.max(st.calibCam.length, st.calibImu.length);
+    if (n >= CALIB_MIN_N || now - st.calibStart >= CALIB_TIMEOUT_MS) beginNod();
     return;
   }
   if (st.phase === "nod") {
@@ -988,17 +991,38 @@ $("spineSnap")?.addEventListener("click", () => {
 $("spineClear")?.addEventListener("click", () => { spineSnap = null; lastSpine = 0; });
 
 /* ------------------------------------------------------------------ */
-/* Тест «с / без»                                                      */
-/* ------------------------------------------------------------------ */
-/* ------------------------------------------------------------------ */
 /* AI-анализ осанки: история сессий (insights.js) — сохранение,        */
 /* завершение текущей записи и отрисовка дашборда.                     */
 /* ------------------------------------------------------------------ */
 const SESS_KEY = "lookup.sessions.v1";
 const SESS_MAX = 400;       // старые сессии обрезаем, чтобы localStorage не разрастался
 const SESS_MIN_DUR = 20;    // сек — короче не сохраняем (случайный клик «Старт»/«Стоп»)
+const CURRENT_KEY = "lookup.session.current"; // «чекпойнт» незавершённой сессии — на случай краша вкладки
 const loadSessions = () => { try { return JSON.parse(localStorage.getItem(SESS_KEY)) || []; } catch { return []; } };
 const saveSessions = (arr) => { try { localStorage.setItem(SESS_KEY, JSON.stringify(arr.slice(-SESS_MAX))); } catch {} };
+
+// Периодически пишем текущую (ещё не завершённую) сессию в localStorage, пока идёт мониторинг:
+// если вкладка закроется без beforeunload (краш, принудительное закрытие) — прогресс не потеряется.
+function checkpointSession() {
+  if (!st.rec) return;
+  try { localStorage.setItem(CURRENT_KEY, JSON.stringify({ session: st.rec, at: Date.now() })); } catch {}
+}
+function clearCheckpoint() { try { localStorage.removeItem(CURRENT_KEY); } catch {} }
+
+// При загрузке страницы: если остался чекпойнт от сессии, которую не успели штатно завершить
+// (закрыли вкладку без beforeunload, авария вкладки/браузера) — досчитываем и сохраняем её как есть.
+function recoverInterruptedSession() {
+  let raw;
+  try { raw = JSON.parse(localStorage.getItem(CURRENT_KEY)); } catch { raw = null; }
+  clearCheckpoint();
+  if (!raw?.session) return;
+  const rec = finishSession(raw.session, raw.at ?? Date.now());
+  if (rec.dur >= SESS_MIN_DUR) {
+    const arr = loadSessions();
+    arr.push(rec);
+    saveSessions(arr);
+  }
+}
 
 function finalizeSession() {
   if (!st.rec) return;
@@ -1008,6 +1032,7 @@ function finalizeSession() {
     arr.push(st.rec);
     saveSessions(arr);
   }
+  clearCheckpoint();
   st.rec = null;
   renderInsights();
 }
@@ -1108,6 +1133,9 @@ function renderInsights() {
     : "";
 }
 
+/* ------------------------------------------------------------------ */
+/* Тест «с / без»                                                      */
+/* ------------------------------------------------------------------ */
 const RUNS_KEY = "lookup.runs.v2";
 const loadRuns = () => { try { return JSON.parse(localStorage.getItem(RUNS_KEY)) || []; } catch { return []; } };
 const saveRuns = (r) => { try { localStorage.setItem(RUNS_KEY, JSON.stringify(r)); } catch {} };
@@ -1341,5 +1369,6 @@ buildGauge(getLimit());
 renderLoadChart();
 renderCalc();
 renderRuns();
+recoverInterruptedSession();
 renderInsights();
 try { if (localStorage.getItem("lookup.phones") === "1") connectPhones(); } catch {}
