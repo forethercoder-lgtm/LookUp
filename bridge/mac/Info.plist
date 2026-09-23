@@ -4,6 +4,10 @@
 <dict>
   <key>CFBundleIdentifier</key><string>kz.lookup.bridge</string>
   <key>CFBundleName</key><string>lookup-bridge</string>
-  <key>NSMotionUsageDescription</key><string>LookUp читает наклон головы с AirPods, чтобы следить за осанкой.</string>
+  <key>CFBundleExecutable</key><string>lookup-bridge</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSUIElement</key><true/>
+  <key>NSMotionUsageDescription</key><string>LookUp читает наклон головы с наушников, чтобы следить за осанкой.</string>
 </dict>
 </plist>

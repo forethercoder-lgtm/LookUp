@@ -1,4 +1,4 @@
-// LookUp bridge для macOS: наклон головы с AirPods (Pro / Max / 3 / 4, Beats Fit Pro) → ws://127.0.0.1:8765
+// LookUp bridge для macOS: наклон головы с наушников Apple (AirPods 3 / Pro / Max, Beats Fit Pro) → ws://127.0.0.1:8765
 // Требуется macOS 14+ (CMHeadphoneMotionManager). Сборка: ./build.sh
 // Формат сообщения: {"pitch":градусы,"roll":градусы,"yaw":градусы,"t":мс}. Сайт сам определяет знак кивком.
 import Foundation
@@ -10,29 +10,53 @@ final class Bridge: NSObject, CMHeadphoneMotionManagerDelegate {
     let motion = CMHeadphoneMotionManager()
     var listener: NWListener?
     var conns: [ObjectIdentifier: NWConnection] = [:]
+    var lastErrorLog = Date.distantPast
 
     func run() throws {
-        guard motion.isDeviceMotionAvailable else {
-            print("Движение наушников недоступно: нужны AirPods Pro/Max/3/4 и macOS 14+.")
-            exit(1)
+        switch CMHeadphoneMotionManager.authorizationStatus() {
+        case .denied, .restricted:
+            print("Нет доступа к движению. Системные настройки → Конфиденциальность и безопасность → Движение и фитнес: включите для lookup-bridge (или Terminal).")
+        default:
+            break
+        }
+        if !motion.isDeviceMotionAvailable {
+            print("Пока нет совместимых наушников (AirPods 3 / Pro / Max, Beats Fit Pro) — жду подключения…")
         }
         motion.delegate = self
         try startServer()
-        motion.startDeviceMotionUpdates(to: OperationQueue.main) { [weak self] m, err in
-            if let err = err { print("Ошибка датчика:", err.localizedDescription); return }
-            guard let self = self, let m = m else { return }
-            self.broadcast(m)
-        }
-        print("LookUp bridge: ws://127.0.0.1:8765 — наденьте AirPods и откройте сайт (Ctrl+C — выход)")
+        startUpdates()
+        print("LookUp bridge: ws://127.0.0.1:8765 — наденьте наушники и откройте сайт (Ctrl+C — выход)")
         RunLoop.main.run()
+    }
+
+    // безопасно вызывать повторно: при (пере)подключении наушников запускаем поток данных заново
+    func startUpdates() {
+        if motion.isDeviceMotionActive { motion.stopDeviceMotionUpdates() }
+        motion.startDeviceMotionUpdates(to: OperationQueue.main) { [weak self] m, err in
+            guard let self = self else { return }
+            if let err = err {
+                if Date().timeIntervalSince(self.lastErrorLog) > 5 {
+                    print("Ошибка датчика:", err.localizedDescription)
+                    self.lastErrorLog = Date()
+                }
+                return
+            }
+            if let m = m { self.broadcast(m) }
+        }
     }
 
     func startServer() throws {
         let params = NWParameters.tcp
+        // только петля (loopback): наружу мост не виден
+        params.requiredInterfaceType = .loopback
         params.defaultProtocolStack.applicationProtocols.insert(NWProtocolWebSocket.Options(), at: 0)
-        // только локальный интерфейс: наружу мост не виден
-        params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: NWEndpoint.Port(integerLiteral: 8765))
-        let l = try NWListener(using: params)
+        let l = try NWListener(using: params, on: NWEndpoint.Port(rawValue: 8765)!)
+        l.stateUpdateHandler = { s in
+            if case .failed(let e) = s {
+                print("Сервер не запустился (порт 8765 занят?):", e)
+                exit(1)
+            }
+        }
         l.newConnectionHandler = { [weak self] c in
             guard let self = self else { return }
             let id = ObjectIdentifier(c)
@@ -70,8 +94,11 @@ final class Bridge: NSObject, CMHeadphoneMotionManagerDelegate {
         }
     }
 
-    func headphoneMotionManagerDidConnect(_ manager: CMHeadphoneMotionManager) { print("🎧 подключены") }
-    func headphoneMotionManagerDidDisconnect(_ manager: CMHeadphoneMotionManager) { print("🎧 отключены") }
+    func headphoneMotionManagerDidConnect(_ manager: CMHeadphoneMotionManager) {
+        print("Наушники подключены")
+        startUpdates()
+    }
+    func headphoneMotionManagerDidDisconnect(_ manager: CMHeadphoneMotionManager) { print("Наушники отключены") }
 }
 
 if #available(macOS 14.0, *) {
