@@ -15,7 +15,6 @@ const CALIB_TIMEOUT_MS = 4000; // потолок на случай, если л�
 const NOD_MIN = 8;             // кивок вниз минимум на столько градусов
 const NOD_TIMEOUT_MS = 6000;
 const CALIB_MAX_SPREAD = 4;    // разброс значений при калибровке (P90−P10), °
-const PASS_RATIO = 0.9;        // тест пройден, если >= 90% времени поза в норме
 const SMOOTH = 0.35;           // EMA-сглаживание
 const MEDIAN_N = 5;            // медиана по 5 отсчётам перед EMA (убирает выбросы)
 const HYST = 2;                // гистерезис порога головы, °: вход > порога, выход < порога − 2
@@ -109,7 +108,6 @@ const st = {
   sessTotal: 0,
   sessSafe: 0,
   sitStart: 0,
-  test: null,
   imu: null,           // {pitch, at}
   ws: null, imuWanted: false, retry: null,
   pip: null,
@@ -333,15 +331,12 @@ function stopAll() {
   if (st.stream) st.stream.getTracks().forEach((t) => t.stop());
   st.stream = null;
   st.source = null;
-  st.test = null;
   st.phase = "idle";
   st.pts = null; st.det = null;
   $("video").srcObject = null;
   $("simBox").hidden = true;
   $("prep").hidden = true;
   $("btnCalib").disabled = true;
-  $("btnTest").disabled = true;
-  $("expProgress").hidden = true;
   clearAlert();
   document.querySelector(".stage").className = "stage glass";
   $("angleNum").textContent = "—";
@@ -540,8 +535,6 @@ function finishCalibration() {
   $("setupTime").innerHTML = setup.toFixed(1) + " с " +
     (setup < 30 ? '<span class="pass">✓</span>' : '<span class="fail">✗</span>');
   $("btnCalib").disabled = false;
-  $("btnTest").disabled = false;
-  $("expHint").textContent = st.source === "sim" ? "Демо: результаты не сохраняются." : "Готово — работайте как обычно.";
   updateScreenAdvice();
   msg(st.nImu !== null ? "Готово · наушники" : "Готово");
 }
@@ -696,7 +689,6 @@ function handleSample({ cam, imu }, dt, now) {
     { ok: ["ok", "Плечи"], slouch: ["bad", "Плечи · сутулость"], tilt: ["warn", "Плечи · перекос"] }[sh] || ["", "Плечи"];
   setChip("chipSh", shChip[0], shChip[1]);
   updateAlert(bad, reason, now);
-  updateTest(bad, st.angle, dt);
   $("sessSafe").textContent = st.sessTotal > 1 ? Math.round(100 * st.sessSafe / st.sessTotal) + " %" : "—";
 }
 
@@ -1101,13 +1093,14 @@ function renderInsights() {
   const list = $("insightsList");
   list.innerHTML = report.insights.length
     ? report.insights.map((ins) => `<div class="insightItem ${ins.kind}"><b>${ins.kind === "good" ? "✓" : "⚠"}</b><span>${ins.text}</span></div>`).join("")
-    : `<p class="emptyNote">Пока недостаточно данных для анализа паттернов. Продолжайте мониторинг несколько дней подряд — здесь появятся конкретные наблюдения.</p>`;
+    : `<p class="emptyNote">Пока недостаточно данных для анализа паттернов. Продолжайте мониторинг — здесь появятся конкретные наблюдения, часть уже после нескольких минут, часть — со временем, по мере накопления истории.</p>`;
 
   const risk = $("insightsRisk"), reasons = $("insightsRiskReasons");
   if (report.risk.level === null) {
     risk.className = "riskPill";
     risk.textContent = "Недостаточно данных";
-    reasons.innerHTML = `<p class="emptyNote">Нужно хотя бы 3 дня мониторинга за последнюю неделю (сейчас ${report.risk.daysWithData}).</p>`;
+    const leftSec = Math.max(0, Math.ceil((MIN_SCORE_SEC - report.risk.dataSec) / 60) * 60);
+    reasons.innerHTML = `<p class="emptyNote">Нужно ещё ~${Math.ceil(leftSec / 60)} мин мониторинга за последние 7 дней (сейчас ${fmtDur(report.risk.dataSec)}).</p>`;
   } else {
     risk.className = "riskPill " + report.risk.level;
     risk.textContent = { low: "Низкий", moderate: "Средний", high: "Высокий" }[report.risk.level];
@@ -1134,106 +1127,26 @@ function renderInsights() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Тест «с / без»                                                      */
-/* ------------------------------------------------------------------ */
-const RUNS_KEY = "lookup.runs.v2";
-const loadRuns = () => { try { return JSON.parse(localStorage.getItem(RUNS_KEY)) || []; } catch { return []; } };
-const saveRuns = (r) => { try { localStorage.setItem(RUNS_KEY, JSON.stringify(r)); } catch {} };
-
-function startTest() {
-  if (st.phase !== "monitoring" || st.test) return;
-  st.test = { dur: Number($("expDur").value), t: 0, safe: 0, sum: 0, max: 0, mode: $("expMode").value, limit: getLimit() };
-  $("btnTest").disabled = true;
-  $("expProgress").hidden = false;
-  $("expHint").textContent = "Идёт тест…";
-}
-
-function updateTest(bad, angle, dt) {
-  const t = st.test;
-  if (!t) return;
-  t.t += dt;
-  if (!bad) t.safe += dt;
-  t.sum += angle * dt;
-  t.max = Math.max(t.max, angle);
-  $("expBar").style.width = Math.min(100, 100 * t.t / t.dur) + "%";
-  if (t.t >= t.dur) finishTest();
-}
-
-function finishTest() {
-  const t = st.test; st.test = null;
-  $("btnTest").disabled = false;
-  $("expProgress").hidden = true;
-  const run = {
-    ts: Date.now(), mode: t.mode, dur: t.dur, limit: t.limit, platform: PLATFORM, sensor: st.usingImu ? "imu" : "cam",
-    safeRatio: t.safe / t.t, mean: t.sum / t.t, max: t.max, setup: st.lastSetup,
-  };
-  if (st.source !== "sim") {
-    const runs = loadRuns(); runs.push(run); saveRuns(runs);
-    $("expHint").textContent = "Сохранено";
-  } else {
-    $("expHint").textContent = `Демо: ${Math.round(run.safeRatio * 100)} % (не сохранено)`;
-  }
-  renderRuns();
-}
-
-function renderRuns() {
-  const runs = loadRuns();
-  const tb = $("runsTable").querySelector("tbody");
-  tb.innerHTML = "";
-  for (const r of runs.slice().reverse()) {
-    const ok = r.safeRatio >= PASS_RATIO;
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${r.mode === "with" ? "С" : "Без"}</td>
-      <td>${Math.round(r.safeRatio * 100)} %</td><td>${r.mean.toFixed(1)}°</td><td>${r.max.toFixed(0)}°</td>
-      <td class="${ok ? "pass" : "fail"}">${ok ? "✓" : "✗"}</td>`;
-    tb.appendChild(tr);
-  }
-  const avg = (m) => {
-    const xs = runs.filter((r) => r.mode === m).map((r) => r.safeRatio);
-    return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
-  };
-  const a = avg("without"), b = avg("with");
-  const chart = $("cmpChart");
-  chart.innerHTML = "";
-  for (const [label, v, color] of [["Без", a, "linear-gradient(180deg,#d4d4d8,#a1a1aa)"], ["С LookUp", b, "linear-gradient(180deg,#3a3a3f,#0a0a0b)"]]) {
-    const d = document.createElement("div");
-    d.className = "bar";
-    d.innerHTML = `<b>${v === null ? "—" : Math.round(v * 100) + " %"}</b><i style="height:${v === null ? 0 : v * 150}px;background:${color}"></i><em>${label}</em>`;
-    chart.appendChild(d);
-  }
-  $("cmpText").textContent = a !== null && b !== null
-    ? `${b >= a ? "▲" : "▼"} ${Math.abs(Math.round((b - a) * 100))} п.п.`
-    : "Нужно по одному тесту «без» и «с».";
-}
-
-function downloadCsv() {
-  const rows = [["timestamp", "platform", "sensor", "condition", "duration_s", "limit_deg", "ok_ratio", "mean_deg", "max_deg", "setup_s"]];
-  for (const r of loadRuns()) {
-    rows.push([new Date(r.ts).toISOString(), r.platform ?? "", r.sensor ?? "cam", r.mode, r.dur, r.limit, r.safeRatio.toFixed(3), r.mean.toFixed(2), r.max.toFixed(1), r.setup?.toFixed(1) ?? ""]);
-  }
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([rows.map((r) => r.join(",")).join("\n")], { type: "text/csv" }));
-  a.download = "lookup_runs.csv"; a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-/* ------------------------------------------------------------------ */
 /* График нагрузки на шею: фигурки вместо подписей                     */
 /* ------------------------------------------------------------------ */
 function renderLoadChart() {
   const data = [[0, 5], [15, 12], [30, 18], [45, 22], [60, 27]]; // Hansraj 2014
-  const grads = [
-    "linear-gradient(180deg,#e4e4e7,#d4d4d8)", "linear-gradient(180deg,#c4c4ca,#a1a1aa)",
-    "linear-gradient(180deg,#8b8b93,#6b6b73)", "linear-gradient(180deg,#52525a,#3a3a3f)",
-    "linear-gradient(180deg,#2a2a2e,#0a0a0b)",
-  ];
+  // Бары окрашены по той же шкале ok/warn/bad, что чипы и спидометр в «Контроле»,
+  // а не отдельной серой шкалой — чтобы «безопасно / растёт / высоко» читалось сразу.
+  const grads = {
+    ok: ["linear-gradient(180deg,#eaf5ef,#cfe9dc)", "linear-gradient(180deg,#cfe9dc,#8fc7ac)"],
+    warn: ["linear-gradient(180deg,#f6e3bd,#e0b264)"],
+    bad: ["linear-gradient(180deg,#e9bdb6,#cf8377)", "linear-gradient(180deg,#cf8377,#b5423b)"],
+  };
   const el = $("loadChart");
   el.innerHTML = "";
-  data.forEach(([deg, kg], i) => {
+  const seen = { ok: 0, warn: 0, bad: 0 };
+  data.forEach(([deg, kg]) => {
     const zone = deg <= 15 ? "ok" : deg <= 30 ? "warn" : "bad";
+    const grad = grads[zone][seen[zone]++] ?? grads[zone][0];
     const d = document.createElement("div");
     d.className = "bar";
-    d.innerHTML = `<b>${kg}</b><i style="height:${kg / 27 * 130}px;background:${grads[i]}"></i>${figure(deg, COLORS[zone])}<em>${deg}°</em>`;
+    d.innerHTML = `<b>${kg}</b><i style="height:${kg / 27 * 130}px;background:${grad}"></i>${figure(deg, COLORS[zone])}<em>${deg}°</em>`;
     el.appendChild(d);
   });
 }
@@ -1351,9 +1264,6 @@ $("btnSkip").onclick = () => { if (st.phase === "prepare") endPrepare(); };
 $("btnDemo").onclick = startDemo;
 $("btnCalib").onclick = beginCalibration;
 $("btnInvert").onclick = () => { st.signCam *= -1; st.signImu *= -1; st.angle = null; st.angleRaw = null; st.buf = []; updateScreenAdvice(); };
-$("btnTest").onclick = startTest;
-$("btnCsv").onclick = downloadCsv;
-$("btnClear").onclick = () => { if (confirm("Удалить все сохранённые запуски?")) { saveRuns([]); renderRuns(); } };
 $("btnTestSiren").onclick = () => { sirenInit(); sirenSet(true); setTimeout(() => sirenSet(st.alerting), 1500); };
 $("setVol").oninput = () => sirenSet(st.alerting);
 $("setLimit").oninput = () => { buildGauge(getLimit()); renderCalc(); };
@@ -1368,7 +1278,6 @@ setupModeSwitch();
 buildGauge(getLimit());
 renderLoadChart();
 renderCalc();
-renderRuns();
 recoverInterruptedSession();
 renderInsights();
 try { if (localStorage.getItem("lookup.phones") === "1") connectPhones(); } catch {}

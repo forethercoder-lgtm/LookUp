@@ -40,7 +40,14 @@
 
 <section id="problem">
   <div class="card glass">
-    <h3>Нагрузка на шею, кг</h3>
+    <div class="loadHead">
+      <h3>Нагрузка на шею, кг</h3>
+      <div class="loadLegend">
+        <span class="dot ok"></span>0–15° безопасно
+        <span class="dot warn"></span>растёт
+        <span class="dot bad"></span>высокая
+      </div>
+    </div>
     <div id="loadChart" class="bars tall"></div>
     <p class="src">Hansraj, 2014 — расчётная модель, не измерение</p>
   </div>
@@ -442,48 +449,6 @@
       <p id="historyEmpty" class="emptyNote" hidden>Пока нет сохранённых сессий.</p>
       <table id="historyTable">
         <thead><tr><th>Когда</th><th>Длительность</th><th>В норме</th><th>Эпизодов</th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<!-- ============ ТЕСТ ============ -->
-<section id="experiment">
-  <h2>Тест</h2>
-  <div class="card glass">
-    <div class="row">
-      <label>Условие
-        <select id="expMode">
-          <option value="without">Без подставки</option>
-          <option value="with">С LookUp</option>
-        </select>
-      </label>
-      <label>Время
-        <select id="expDur">
-          <option value="30">30 сек</option>
-          <option value="60" selected>60 сек</option>
-          <option value="120">120 сек</option>
-        </select>
-      </label>
-      <button id="btnTest" class="btn" disabled>Начать</button>
-      <button id="btnCsv" class="btn ghost small">CSV</button>
-      <button id="btnClear" class="btn ghost small">Очистить</button>
-    </div>
-    <div class="progress" id="expProgress" hidden><div id="expBar"></div></div>
-    <p id="expHint" class="note">Сначала «Старт» в блоке «Контроль».</p>
-  </div>
-
-  <div class="grid2">
-    <div class="card glass">
-      <h3>Время в норме</h3>
-      <div id="cmpChart" class="bars"></div>
-      <p id="cmpText" class="note"></p>
-    </div>
-    <div class="card glass">
-      <h3>Запуски</h3>
-      <table id="runsTable">
-        <thead><tr><th></th><th>Норма</th><th>Средн.</th><th>Макс.</th><th></th></tr></thead>
         <tbody></tbody>
       </table>
     </div>

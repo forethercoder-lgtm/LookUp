@@ -17,7 +17,6 @@ const NAV_APP = `<a href="#setup">Экран</a>
     <a href="#live">Контроль</a>
     <a href="#spine">Позвоночник</a>
     <a href="#insights">AI-анализ</a>
-    <a href="#experiment">Тест</a>
     <a href="../sources/">Источники</a>
     <a href="../">Система</a>`;
 const NAV_MEASURE = `<a href="#guide">Инструкция</a>

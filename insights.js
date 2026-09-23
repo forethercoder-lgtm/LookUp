@@ -9,8 +9,8 @@
 
 export const DAY_MS = 86400000;
 export const MIN_SCORE_SEC = 180;      // 3 мин — минимум, чтобы показать «Оценку осанки» за день
-export const MIN_DAY_SEC = 120;        // 2 мин — минимум, чтобы день считался «с данными» для трендов/риска
-export const MIN_RISK_DAYS = 3;        // дней с данными за 7 — минимум для риск-монитора
+export const MIN_DAY_SEC = 120;        // 2 мин — минимум, чтобы день считался «с данными» для дневных трендов
+export const MIN_RISK_SEC = 180;       // 3 мин суммарно за 7 дней — минимум для риск-монитора (не дни: демо/жюри не ждут сутками)
 export const LONG_EPISODE_SEC = 180;   // «долгий» непрерывный эпизод плохой осанки, для инсайта
 export const HIGH_RISK_EPISODE_SEC = 300; // сигнал риска: очень долгий эпизод
 
@@ -184,13 +184,13 @@ export function generateInsights({ todayAgg, yesterdayAgg, weekAgg, prevWeekAgg,
     else if (diff <= -2) out.push({ kind: "warn", text: `Средний угол наклона головы сегодня выше, чем на прошлой неделе: ${todayAgg.avgAngle.toFixed(0)}° против ${prevWeekAgg.avgAngle.toFixed(0)}°.` });
   }
 
-  // 5. повторяющаяся асимметрия плеч за неделю (не диагноз — только паттерн)
-  const asymDays = days.filter((d) => d.agg.leftAsym + d.agg.rightAsym > 0).length;
+  // 5. повторяющаяся асимметрия плеч (не диагноз — только паттерн). Считаем по числу эпизодов,
+  // а не по числу дней — паттерн виден и за одну сессию мониторинга, не нужно ждать несколько дней.
   const totalAsym = weekAgg.leftAsym + weekAgg.rightAsym;
-  if (asymDays >= 2 && totalAsym >= 4) {
+  if (totalAsym >= 4) {
     const domLeft = weekAgg.leftAsym >= weekAgg.rightAsym;
     const share = Math.max(weekAgg.leftAsym, weekAgg.rightAsym) / totalAsym;
-    if (share >= 0.65) out.push({ kind: "warn", text: `Повторяющаяся асимметрия плеч за последнюю неделю (чаще опущено ${domLeft ? "левое" : "правое"}). Это не диагноз, но паттерн стоит понаблюдать; если он повторяется — есть смысл обсудить со специалистом.` });
+    if (share >= 0.65) out.push({ kind: "warn", text: `Повторяющаяся асимметрия плеч по данным мониторинга (чаще опущено ${domLeft ? "левое" : "правое"}). Это не диагноз, но паттерн стоит понаблюдать; если он повторяется — есть смысл обсудить со специалистом.` });
   }
 
   // 6. длинные непрерывные эпизоды плохой осанки
@@ -211,22 +211,27 @@ export function generateInsights({ todayAgg, yesterdayAgg, weekAgg, prevWeekAgg,
 /* ------------------------------------------------------------------ */
 /* Мониторинг риска: НЕ диагноз. Считаем устойчивые паттерны за 7 дней  */
 /* по 4 независимым сигналам; уровень = сколько сигналов сработало.    */
+/* Порог — суммарное время мониторинга (3 мин), а не число дней: иначе */
+/* индикатор было бы не показать на демо за одну короткую сессию.      */
 /* ------------------------------------------------------------------ */
 export function riskLevel({ days }) {
-  const withData = days.filter((d) => d.agg.dur >= MIN_DAY_SEC);
-  if (withData.length < MIN_RISK_DAYS) return { level: null, reasons: [], daysWithData: withData.length };
-
   const weekAgg = aggregate(days.flatMap((d) => d.sessions));
+  if (weekAgg.dur < MIN_RISK_SEC) return { level: null, reasons: [], dataSec: weekAgg.dur };
+
   const reasons = [];
 
-  const asymDays = days.filter((d) => d.agg.leftAsym + d.agg.rightAsym > 0).length;
+  // (a) повторяющаяся асимметрия — по числу эпизодов, без требования нескольких дней подряд
   const totalAsym = weekAgg.leftAsym + weekAgg.rightAsym;
-  if (asymDays >= 3 && totalAsym >= 4 && Math.max(weekAgg.leftAsym, weekAgg.rightAsym) / totalAsym >= 0.6) {
-    reasons.push("Повторяющаяся асимметрия плеч отмечена в нескольких сессиях за последнюю неделю.");
+  if (totalAsym >= 4 && Math.max(weekAgg.leftAsym, weekAgg.rightAsym) / totalAsym >= 0.6) {
+    reasons.push("Повторяющаяся асимметрия плеч отмечена по данным мониторинга.");
   }
+  // (b) устойчиво высокая доля плохой осанки
   if (weekAgg.badPct !== null && weekAgg.badPct >= 0.25) {
-    reasons.push(`Плохая осанка занимает заметную часть времени мониторинга — ${pct(weekAgg.badPct)}% за последнюю неделю.`);
+    reasons.push(`Плохая осанка занимает заметную часть времени мониторинга — ${pct(weekAgg.badPct)}%.`);
   }
+  // (c) растущая частота эпизодов — сравниваем первую и вторую половину дней с данными за неделю;
+  // это по своей природе многодневный тренд и на короткой демо-сессии обычно не сработает — это нормально.
+  const withData = days.filter((d) => d.agg.dur >= MIN_DAY_SEC);
   const half = Math.ceil(days.length / 2);
   const first = days.slice(0, half).filter((d) => d.agg.dur >= MIN_DAY_SEC);
   const second = days.slice(half).filter((d) => d.agg.dur >= MIN_DAY_SEC);
@@ -235,12 +240,13 @@ export function riskLevel({ days }) {
     const secondAvg = second.reduce((s, d) => s + d.agg.episodes.length, 0) / second.length;
     if (secondAvg >= 1 && secondAvg > firstAvg * 1.3) reasons.push("Частота эпизодов плохой осанки растёт по сравнению с началом недели.");
   }
+  // (d) необычно долгие непрерывные эпизоды
   if (weekAgg.maxEpisode !== null && weekAgg.maxEpisode >= HIGH_RISK_EPISODE_SEC) {
     reasons.push(`Были продолжительные непрерывные эпизоды плохой осанки — до ${Math.round(weekAgg.maxEpisode / 60)} мин.`);
   }
 
   const level = reasons.length >= 3 ? "high" : reasons.length === 2 ? "moderate" : "low";
-  return { level, reasons, daysWithData: withData.length };
+  return { level, reasons, dataSec: weekAgg.dur, daysWithData: withData.length };
 }
 
 /* ------------------------------------------------------------------ */

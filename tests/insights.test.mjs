@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   newSession, tickSession, finishSession, aggregate, byDay, dayKey,
   postureScore, generateInsights, riskLevel, buildReport,
-  MIN_SCORE_SEC, MIN_DAY_SEC, DAY_MS,
+  MIN_SCORE_SEC, MIN_DAY_SEC, MIN_RISK_SEC, DAY_MS,
 } from "../insights.js";
 
 // Строит синтетическую сессию: `durSec` секунд, доля bad = badFrac, тиками по 1 с.
@@ -151,12 +151,33 @@ test("generateInsights: доминирующая асимметрия за не�
   assert.ok(found.text.includes("не диагноз"));
 });
 
-test("riskLevel: меньше MIN_RISK_DAYS дней с данными — «недостаточно данных»", () => {
+test("riskLevel: меньше MIN_RISK_SEC суммарно — «недостаточно данных» (порог в минутах, не в днях)", () => {
   const now = Date.UTC(2026, 2, 10, 12, 0, 0);
-  const days = byDay([makeSession(now, 300, 0.5)], 7, now); // только сегодня
+  const days = byDay([makeSession(now, MIN_RISK_SEC - 30, 0.5)], 7, now); // одна короткая сессия сегодня
   const r = riskLevel({ days });
   assert.equal(r.level, null);
-  assert.equal(r.daysWithData, 1);
+  assert.ok(r.dataSec < MIN_RISK_SEC);
+});
+
+test("riskLevel: MVP для демо — одной сессии сегодня (без истории по дням) достаточно, если она длиннее MIN_RISK_SEC", () => {
+  const now = Date.UTC(2026, 2, 10, 12, 0, 0);
+  // одна сессия, 6 минут, половина времени — плохая осанка: badPct=0.5 ≥ 0.25 → сигнал (b) сам по себе
+  const days = byDay([makeSession(now, 360, 0.5)], 7, now);
+  const r = riskLevel({ days });
+  assert.notEqual(r.level, null, "риск должен считаться уже по одной сессии, если она длиннее 3 минут");
+  assert.ok(r.reasons.length >= 1);
+});
+
+test("riskLevel: повторяющаяся асимметрия видна и в пределах одного дня (без требования нескольких дней подряд)", () => {
+  const now = Date.UTC(2026, 2, 10, 10, 0, 0);
+  // 4 короткие сессии сегодня (разное время того же дня) с явным перекосом влево — раньше сигнал
+  // требовал ≥3 РАЗНЫХ календарных дня, теперь достаточно повторения в пределах одного дня.
+  const sessions = [0, 1, 2, 3].map((i) => makeSession(now - i * 3600 * 1000, 100, 0.1, { asymDir: "left" }));
+  const days = byDay(sessions, 7, now);
+  assert.equal(days.at(-1).sessions.length, 4, "все 4 сессии должны попасть в один и тот же день («сегодня»)");
+  const r = riskLevel({ days });
+  assert.notEqual(r.level, null);
+  assert.ok(r.reasons.some((x) => x.includes("асимметрия")), JSON.stringify(r.reasons));
 });
 
 test("riskLevel: устойчиво высокая доля плохой осанки + асимметрия + долгий эпизод → high, без слова «диагноз» как утверждения", () => {
