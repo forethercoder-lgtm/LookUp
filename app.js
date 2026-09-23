@@ -2,7 +2,7 @@ import { FaceLandmarker, PoseLandmarker, FilesetResolver } from "./vendor/vision
 import { figure } from "./figure.js";
 import { pitchFromMatrix, yawFromMatrix, mirroredTilt, distanceFromIpd, solveTilt as solveTiltCore } from "./geometry.js";
 import { buildSpine, renderSide, renderFront, sideWords } from "./spine.js";
-import { newSession, tickSession, finishSession, buildReport, postureScore, MIN_SCORE_SEC } from "./insights.js";
+import { newSession, tickSession, finishSession, buildReport, postureScore, fmtSpan, MIN_SCORE_SEC } from "./insights.js";
 
 const $ = (id) => document.getElementById(id);
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -1046,6 +1046,59 @@ const fmtWhen = (ms) => {
   return `${d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}, ${time}`;
 };
 
+/* LUP AI: ответ «печатается», как у чат-бота — один раз на сессию; дальше цифры обновляются молча. */
+let lupKey = null, lupBusy = false, lupTimer = null;
+function lupHtml(a) {
+  return `<span class="lupBadge ${a.tier}">${a.badge}</span><h4>${a.title}</h4>` + a.sections.map((s) =>
+    `<h5>${s.h}</h5>` + (s.p ? s.p.map((x) => `<p>${x}</p>`).join("") : "") + (s.list ? `<ul>${s.list.map((x) => `<li>${x}</li>`).join("")}</ul>` : ""),
+  ).join("");
+}
+function typeInto(el, html) {
+  el.innerHTML = html;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) { nodes.push([n, n.textContent]); n.textContent = ""; }
+  let i = 0, pos = 0;
+  clearInterval(lupTimer);
+  lupTimer = setInterval(() => {
+    for (let budget = 14; budget > 0 && i < nodes.length;) {
+      const [node, full] = nodes[i];
+      const take = Math.min(budget, full.length - pos);
+      pos += take; budget -= take;
+      node.textContent = full.slice(0, pos);
+      if (pos >= full.length) { i++; pos = 0; }
+    }
+    if (i >= nodes.length) { clearInterval(lupTimer); lupBusy = false; }
+  }, 16);
+}
+function renderLup(report) {
+  const body = $("lupBody"), meta = $("lupMeta");
+  const s = report.latest;
+  const live = !!(st.rec && s && s.id === st.rec.id);
+  if (!report.lup) {
+    lupKey = null; lupBusy = false; clearInterval(lupTimer); clearTimeout(lupTimer);
+    const dur = s ? s.dur : 0;
+    if (live) {
+      meta.textContent = `анализ через ${fmtSpan(MIN_SCORE_SEC - dur)}`;
+      body.innerHTML = `<p class="lupWait lupThinking">LUP AI собирает данные о вашей осанке</p><div class="lupBar"><i style="width:${Math.min(100, dur / MIN_SCORE_SEC * 100)}%"></i></div>`;
+    } else {
+      meta.textContent = "";
+      body.innerHTML = `<p class="lupWait">Последняя сессия была короче минуты. Нажмите «Старт» и посидите за ноутбуком хотя бы минуту — LUP AI разберёт вашу осанку.</p>`;
+    }
+    return;
+  }
+  meta.textContent = `${live ? "идёт мониторинг · " : ""}${fmtWhen(s.start)} · ${fmtSpan(s.dur)}`;
+  const html = lupHtml(report.lup);
+  if (s.id !== lupKey) { // новая сессия: «думает», потом печатает
+    lupKey = s.id; lupBusy = true;
+    clearInterval(lupTimer);
+    body.innerHTML = `<p class="lupWait lupThinking">LUP AI анализирует вашу осанку</p>`;
+    lupTimer = setTimeout(() => typeInto(body, html), 1100);
+  } else if (!lupBusy) {
+    body.innerHTML = html;
+  }
+}
+
 function renderInsights() {
   if (!$("insightsBody")) return; // страница «Замер»: секции нет
   const live = st.rec ? [{ ...st.rec, episodes: st.rec._streak > 0 ? [...st.rec.episodes, st.rec._streak] : st.rec.episodes }] : [];
@@ -1056,18 +1109,17 @@ function renderInsights() {
   $("insightsBody").hidden = !has;
   if (!has) return;
 
+  renderLup(report);
+
   const ring = $("iScoreRing");
   if (report.score === null) {
     $("iScore").textContent = "—";
-    const left = Math.max(0, Math.ceil((MIN_SCORE_SEC - report.today.dur) / 60));
-    $("iScoreNote").textContent = report.today.dur > 0
-      ? `Недостаточно данных сегодня: наберите ещё ~${left} мин мониторинга.`
-      : "Начните мониторинг сегодня, чтобы увидеть оценку.";
+    $("iScoreNote").textContent = "Оценка появится после минуты мониторинга.";
     ring.style.setProperty("--score", 0);
     ring.style.setProperty("--ring-color", "var(--faint)");
   } else {
     $("iScore").textContent = report.score;
-    $("iScoreNote").textContent = "Считается по сегодняшним данным этого устройства: доля времени в норме, частота и длительность эпизодов.";
+    $("iScoreNote").textContent = "Доля времени в правильной позе, частота и длительность наклонов за последнюю сессию.";
     ring.style.setProperty("--score", report.score);
     ring.style.setProperty("--ring-color", report.score >= 75 ? "var(--ok)" : report.score >= 50 ? "var(--warn)" : "var(--bad)");
   }
@@ -1088,25 +1140,6 @@ function renderInsights() {
     div.className = "bar";
     div.innerHTML = `<b>${score === null ? "—" : score}</b><i style="height:${score === null ? 4 : Math.max(4, score / 100 * 130)}px;background:${color}"></i><em>${d.label}</em>`;
     week.appendChild(div);
-  }
-
-  const list = $("insightsList");
-  list.innerHTML = report.insights.length
-    ? report.insights.map((ins) => `<div class="insightItem ${ins.kind}"><b>${ins.kind === "good" ? "✓" : "⚠"}</b><span>${ins.text}</span></div>`).join("")
-    : `<p class="emptyNote">Пока недостаточно данных для анализа паттернов. Продолжайте мониторинг — здесь появятся конкретные наблюдения, часть уже после нескольких минут, часть — со временем, по мере накопления истории.</p>`;
-
-  const risk = $("insightsRisk"), reasons = $("insightsRiskReasons");
-  if (report.risk.level === null) {
-    risk.className = "riskPill";
-    risk.textContent = "Недостаточно данных";
-    const leftSec = Math.max(0, Math.ceil((MIN_SCORE_SEC - report.risk.dataSec) / 60) * 60);
-    reasons.innerHTML = `<p class="emptyNote">Нужно ещё ~${Math.ceil(leftSec / 60)} мин мониторинга за последние 7 дней (сейчас ${fmtDur(report.risk.dataSec)}).</p>`;
-  } else {
-    risk.className = "riskPill " + report.risk.level;
-    risk.textContent = { low: "Низкий", moderate: "Средний", high: "Высокий" }[report.risk.level];
-    reasons.innerHTML = report.risk.reasons.length
-      ? `<ul class="plain">${report.risk.reasons.map((r) => `<li>${r}</li>`).join("")}</ul>`
-      : `<p class="emptyNote">Устойчивых паттернов не найдено.</p>`;
   }
 
   const runs = stored.slice().reverse().slice(0, 20);

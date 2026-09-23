@@ -1,21 +1,14 @@
 /* ------------------------------------------------------------------ */
-/* AI-анализ осанки: история сессий + детерминированная аналитика.     */
-/* Никакого внешнего AI API — только арифметика по уже вычисленным на  */
-/* каждом тике данным (bad/headBad/наклон плеч). Ничего не выдумываем: */
-/* каждая цифра и инсайт требуют минимума данных, иначе — «нет данных».*/
-/* Формулировки нарочно избегают диагнозов (см. FDA General Wellness,  */
-/* sources.json) — это индикатор паттерна, а не медицинское решение.   */
+/* LUP AI: история сессий + анализ осанки.                             */
+/* Внутри — алгоритм на правилах, без нейросети и внешнего API: по      */
+/* метрикам сессии (доля времени с наклоном, углы, эпизоды, перекос    */
+/* плеч) выбирается один из шаблонов ответа и заполняется цифрами.     */
 /* ------------------------------------------------------------------ */
 
 export const DAY_MS = 86400000;
-export const MIN_SCORE_SEC = 180;      // 3 мин — минимум, чтобы показать «Оценку осанки» за день
-export const MIN_DAY_SEC = 120;        // 2 мин — минимум, чтобы день считался «с данными» для дневных трендов
-export const MIN_RISK_SEC = 180;       // 3 мин суммарно за 7 дней — минимум для риск-монитора (не дни: демо/жюри не ждут сутками)
-export const LONG_EPISODE_SEC = 180;   // «долгий» непрерывный эпизод плохой осанки, для инсайта
-export const HIGH_RISK_EPISODE_SEC = 300; // сигнал риска: очень долгий эпизод
+export const MIN_SCORE_SEC = 60;       // 1 мин мониторинга — достаточно для оценки и ответа LUP AI
 
 const BUCKETS = ["night", "morning", "afternoon", "evening"];
-const BUCKET_LABEL = { night: "ночью", morning: "утром", afternoon: "днём", evening: "вечером" };
 const WEEKDAY = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 
 export function hourBucket(date) {
@@ -126,151 +119,166 @@ export function byDay(sessions, days, nowMs) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Оценка осанки 0…100 — детерминированная функция агрегата дня.       */
-/* Никаких случайных чисел: доля плохой осанки, частота эпизодов и     */
-/* доля длинных эпизодов. null, если данных меньше MIN_SCORE_SEC.      */
+/* Оценка осанки 0…100: доля времени с наклоном, частота эпизодов в    */
+/* минуту и доля длинных (> 30 с) эпизодов. null — если меньше минуты. */
 /* ------------------------------------------------------------------ */
 export function postureScore(agg) {
   if (!agg || agg.dur < MIN_SCORE_SEC) return null;
-  let score = 100;
-  score -= agg.badPct * 55;                                      // до −55 за долю времени в плохой позе
-  const perHour = agg.episodes.length / (agg.dur / 3600);
-  score -= Math.min(25, perHour * 5);                             // до −25 за частоту эпизодов
-  const longCount = agg.episodes.filter((e) => e > 60).length;
-  const longRatio = agg.episodes.length ? longCount / agg.episodes.length : 0;
-  score -= Math.min(20, longRatio * 20);                          // до −20 если много эпизодов дольше минуты
+  const perMin = agg.episodes.length / (agg.dur / 60);
+  const longRatio = agg.episodes.length ? agg.episodes.filter((e) => e > 30).length / agg.episodes.length : 0;
+  const score = 100 - agg.badPct * 70 - Math.min(15, perMin * 6) - Math.min(15, longRatio * 15);
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-const pct = (x) => Math.round(x * 100);
-const epWord = (n) => (n % 10 === 1 && n % 100 !== 11 ? "эпизод" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "эпизода" : "эпизодов");
-
 /* ------------------------------------------------------------------ */
-/* Инсайты: список правил «если данных достаточно и порог пройден —    */
-/* добавить факт». Максимум 5, каждый — отдельно проверенный факт, а   */
-/* не диагноз. Порядок фиксированный (по важности), не случайный.      */
+/* LUP AI: ответ по шаблонам. Уровень — по доле времени с наклоном,    */
+/* текст заполняется цифрами сессии, добавки — по перекосу плеч,        */
+/* длинному эпизоду и сравнению с прошлой сессией. Вариант заголовка   */
+/* выбирается по seed (время начала сессии) — один и тот же для сессии. */
 /* ------------------------------------------------------------------ */
-export function generateInsights({ todayAgg, yesterdayAgg, weekAgg, prevWeekAgg, days }) {
-  const out = [];
-
-  // 1. доля плохой осанки сегодня
-  if (todayAgg.dur >= MIN_SCORE_SEC) {
-    if (todayAgg.badPct >= 0.15) out.push({ kind: "warn", text: `Ваша осанка была неправильной ${pct(todayAgg.badPct)}% времени сегодняшнего мониторинга.` });
-    else if (todayAgg.badPct <= 0.05) out.push({ kind: "good", text: `Сегодня вы почти всё время сидели правильно — ${pct(todayAgg.goodPct)}% в норме.` });
-  }
-
-  // 2. время суток, когда осанка хуже (нужно ≥2 «часовых» отрезка с данными за неделю)
-  const buckets = BUCKETS.map((k) => ({ k, ...weekAgg.hours[k] })).filter((b) => b.total >= 180);
-  if (buckets.length >= 2) {
-    const withPct = buckets.map((b) => ({ ...b, pct: b.bad / b.total }));
-    const worst = withPct.reduce((a, b) => (b.pct > a.pct ? b : a));
-    const restAvg = withPct.filter((b) => b.k !== worst.k).reduce((s, b) => s + b.pct, 0) / Math.max(1, withPct.length - 1);
-    if (worst.pct - restAvg >= 0.15) out.push({ kind: "warn", text: `Осанка чаще нарушается ${BUCKET_LABEL[worst.k]}: доля времени с плохой осанкой в это время заметно выше, чем в остальные часы.` });
-  }
-
-  // 3. эпизодов сегодня по сравнению со средним за предыдущие дни недели
-  const prevDaysWithData = days.slice(0, 6).filter((d) => d.agg.dur >= MIN_DAY_SEC);
-  if (todayAgg.dur >= MIN_SCORE_SEC && prevDaysWithData.length >= 2) {
-    const weeklyAvg = prevDaysWithData.reduce((s, d) => s + d.agg.episodes.length, 0) / prevDaysWithData.length;
-    const cnt = todayAgg.episodes.length;
-    if (weeklyAvg >= 1 && cnt > weeklyAvg * 1.3) out.push({ kind: "warn", text: `Сегодня ${cnt} ${epWord(cnt)} плохой осанки — больше, чем в среднем за последние дни (${weeklyAvg.toFixed(1)}).` });
-    else if (weeklyAvg >= 1 && cnt < weeklyAvg * 0.7) out.push({ kind: "good", text: `Сегодня всего ${cnt} ${epWord(cnt)} плохой осанки — меньше среднего за последние дни (${weeklyAvg.toFixed(1)}).` });
-  }
-
-  // 4. средний угол наклона головы: сегодня против прошлой недели (без сегодня)
-  if (todayAgg.angleW >= 60 && prevWeekAgg.angleW >= 60) {
-    const diff = prevWeekAgg.avgAngle - todayAgg.avgAngle;
-    if (diff >= 2) out.push({ kind: "good", text: `Средний угол наклона головы сегодня ниже, чем на прошлой неделе: ${todayAgg.avgAngle.toFixed(0)}° против ${prevWeekAgg.avgAngle.toFixed(0)}°.` });
-    else if (diff <= -2) out.push({ kind: "warn", text: `Средний угол наклона головы сегодня выше, чем на прошлой неделе: ${todayAgg.avgAngle.toFixed(0)}° против ${prevWeekAgg.avgAngle.toFixed(0)}°.` });
-  }
-
-  // 5. повторяющаяся асимметрия плеч (не диагноз — только паттерн). Считаем по числу эпизодов,
-  // а не по числу дней — паттерн виден и за одну сессию мониторинга, не нужно ждать несколько дней.
-  const totalAsym = weekAgg.leftAsym + weekAgg.rightAsym;
-  if (totalAsym >= 4) {
-    const domLeft = weekAgg.leftAsym >= weekAgg.rightAsym;
-    const share = Math.max(weekAgg.leftAsym, weekAgg.rightAsym) / totalAsym;
-    if (share >= 0.65) out.push({ kind: "warn", text: `Повторяющаяся асимметрия плеч по данным мониторинга (чаще опущено ${domLeft ? "левое" : "правое"}). Это не диагноз, но паттерн стоит понаблюдать; если он повторяется — есть смысл обсудить со специалистом.` });
-  }
-
-  // 6. длинные непрерывные эпизоды плохой осанки
-  if (weekAgg.maxEpisode !== null && weekAgg.maxEpisode >= LONG_EPISODE_SEC) {
-    out.push({ kind: "warn", text: `Был непрерывный эпизод плохой осанки продолжительностью около ${Math.round(weekAgg.maxEpisode / 60)} мин. Долгие эпизоды — то, на что стоит обратить внимание.` });
-  }
-
-  // 7. сегодня против вчера
-  if (todayAgg.dur >= MIN_SCORE_SEC && yesterdayAgg.dur >= MIN_SCORE_SEC) {
-    const d = todayAgg.badPct - yesterdayAgg.badPct;
-    if (d <= -0.05) out.push({ kind: "good", text: `Сегодня осанка лучше, чем вчера: ${pct(todayAgg.badPct)}% времени с плохой осанкой против ${pct(yesterdayAgg.badPct)}% вчера.` });
-    else if (d >= 0.05) out.push({ kind: "warn", text: `Сегодня осанка хуже, чем вчера: ${pct(todayAgg.badPct)}% времени с плохой осанкой против ${pct(yesterdayAgg.badPct)}% вчера.` });
-  }
-
-  return out.slice(0, 5);
+export const TIERS = ["excellent", "good", "fair", "poor", "critical"];
+export function lupTier(badPct) {
+  if (badPct < 0.05) return "excellent";
+  if (badPct < 0.15) return "good";
+  if (badPct < 0.35) return "fair";
+  if (badPct < 0.6) return "poor";
+  return "critical";
 }
 
-/* ------------------------------------------------------------------ */
-/* Мониторинг риска: НЕ диагноз. Считаем устойчивые паттерны за 7 дней  */
-/* по 4 независимым сигналам; уровень = сколько сигналов сработало.    */
-/* Порог — суммарное время мониторинга (3 мин), а не число дней: иначе */
-/* индикатор было бы не показать на демо за одну короткую сессию.      */
-/* ------------------------------------------------------------------ */
-export function riskLevel({ days }) {
-  const weekAgg = aggregate(days.flatMap((d) => d.sessions));
-  if (weekAgg.dur < MIN_RISK_SEC) return { level: null, reasons: [], dataSec: weekAgg.dur };
+const pct = (x) => Math.round(x * 100);
+const deg = (x) => Math.max(0, Math.round(x ?? 0));
+export function fmtSpan(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  if (m === 0) return `${s} с`;
+  return s ? `${m} мин ${s} с` : `${m} мин`;
+}
+const times = (n) => (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? `${n} раза` : `${n} раз`);
 
-  const reasons = [];
+const T = {
+  excellent: {
+    badge: "Отлично",
+    titles: ["Вы настоящий спортик!", "Осанка как у спортсмена!", "Идеально — так держать, спортик!"],
+    analysis: (m) => `LUP AI проанализировал вашу сессию: вы настоящий спортик — осанка почти идеальная. За ${m.dur} вы ${m.good}% времени держали голову в безопасной зоне 0–15°, средний наклон — всего ${m.avg}°. Шея, плечи и спина работали так, как и должны при работе за ноутбуком. Это уровень человека, который следит за собой.`,
+    effectsTitle: "Что это даёт",
+    effects: "Шея держит только вес самой головы — около 5 кг, без лишней нагрузки. Мышцы шеи и верха спины не перенапрягаются, поэтому к вечеру меньше усталости, скованности и головной боли. Дыхание свободнее, концентрация держится дольше. Такая привычка — лучшая защита от сутулости на годы вперёд.",
+    advice: [
+      "Продолжайте в том же духе — вы задаёте планку.",
+      "Каждые 30–40 минут вставайте на 1–2 минуты: даже идеальной позе нужен отдых от неподвижности.",
+      "Не меняйте высоту подставки — она подобрана правильно.",
+      "Добавьте лёгкую разминку шеи и плеч раз в день, чтобы закрепить результат.",
+    ],
+  },
+  good: {
+    badge: "Хорошо",
+    titles: ["Хорошая осанка, почти без замечаний", "Неплохо! Осанка в норме большую часть времени"],
+    analysis: (m) => `LUP AI проанализировал вашу сессию. За ${m.dur} вы ${m.good}% времени сидели правильно, средний наклон головы — ${m.avg}°. Несколько раз голова всё же уходила вперёд (поза нарушалась ${m.eps}), но наклоны были короткими и вы быстро возвращались в правильное положение.`,
+    effectsTitle: "К чему это может привести",
+    effects: "Короткие наклоны почти не нагружают шею. Но если они станут чаще и дольше, нагрузка на шейный отдел растёт очень быстро: уже при 15° — около 12 кг, при 30° — около 18 кг. Именно так привычка сутулиться и формируется — незаметно, по несколько секунд за раз.",
+    advice: [
+      "Как только LookUp подаёт сигнал — выпрямляйтесь сразу, не дожидаясь конца задачи.",
+      "Проверьте, что верх экрана на уровне глаз.",
+      "Когда читаете текст внизу экрана — прокручивайте его вверх, а не опускайте голову.",
+      "Каждые 30–40 минут делайте паузу на 1–2 минуты.",
+    ],
+  },
+  fair: {
+    badge: "Средне",
+    titles: ["Осанка средняя — есть над чем поработать", "Вы часто наклоняетесь вперёд"],
+    analysis: (m) => `LUP AI проанализировал вашу сессию. За ${m.dur} голова ${m.bad}% времени была наклонена сильнее безопасных 15°, средний наклон — ${m.avg}°, максимальный — ${m.max}°. Поза нарушалась ${m.eps}. Это уже не случайные движения, а привычка, которая начинает формироваться.`,
+    effectsTitle: "Последствия",
+    effects: "В таком положении шея постоянно держит 12–18 кг вместо 5. Мышцы задней поверхности шеи и верха спины работают без отдыха: появляются напряжение и скованность, к концу дня — усталость и головная боль. Если сидеть так каждый день, сутулость постепенно становится вашей обычной позой.",
+    advice: [
+      "Поднимите экран: верх экрана — на уровне глаз. Введите высоту подставки в блоке «Экран» — сайт посчитает нужный угол.",
+      "Реагируйте на сигнал LookUp сразу — через неделю спина начнёт держаться сама.",
+      "Каждые 20–30 минут вставайте, расправляйте плечи и сводите лопатки.",
+      "Сядьте глубже, спиной к спинке стула — так голове легче держаться прямо.",
+    ],
+  },
+  poor: {
+    badge: "Плохо",
+    titles: ["Осанка плохая — шея перегружена", "Вы большую часть времени сутулитесь"],
+    analysis: (m) => `LUP AI проанализировал вашу сессию. За ${m.dur} вы ${m.bad}% времени сидели с наклоном, средний наклон — ${m.avg}°, голова уходила вперёд до ${m.max}°. Поза нарушалась ${m.eps}. Это уже устойчивая сутулость, а не случайные движения.`,
+    effectsTitle: "Последствия",
+    effects: "При таком наклоне шея держит 18–22 кг — в 4 раза больше веса головы. Постоянная перегрузка приводит к хроническому напряжению мышц шеи и плеч, головным болям, болям в шее и между лопатками, быстрой утомляемости. Плечи привыкают уходить вперёд, и со временем выпрямиться становится всё труднее.",
+    advice: [
+      "В первую очередь поднимите экран на подставку — без этого привычка не уйдёт.",
+      "Работайте с LookUp постоянно и не выключайте сирену — это ваш тренер осанки.",
+      "Каждые 20 минут — перерыв: встаньте, сведите лопатки, потянитесь вверх.",
+      "Каждый день 5–10 минут упражнений: подбородок назад («двойной подбородок»), сведение лопаток, планка.",
+      "Если шея болит регулярно — покажитесь врачу.",
+    ],
+  },
+  critical: {
+    badge: "Критично",
+    titles: ["Критическая сутулость — срочно выпрямитесь!", "Шея работает на пределе"],
+    analysis: (m) => `LUP AI проанализировал вашу сессию. Почти всё время — ${m.bad}% из ${m.dur} — голова была сильно наклонена вперёд: в среднем на ${m.avg}°, максимум — ${m.max}°. ${m.good < 1 ? "В правильной позе вы не были почти ни секунды." : `В правильной позе вы провели только ${m.good}% времени.`}`,
+    effectsTitle: "Последствия",
+    effects: "Такая поза нагружает шею до 22–27 кг — в пять раз больше веса самой головы. Если работать так регулярно, это ведёт к постоянным болям в шее и спине, головным болям, онемению и покалыванию в руках. Закрепляются сутулость и «выдвинутая» вперёд голова, а мышцы спины слабеют.",
+    advice: [
+      "Прямо сейчас: выпрямитесь, отведите плечи назад и поднимите экран.",
+      "Поставьте ноутбук на подставку и введите её высоту в блоке «Экран».",
+      "Работайте короткими отрезками по 20 минут с перерывами.",
+      "Ежедневно делайте упражнения для шеи и спины.",
+      "Если есть боль, онемение или покалывание в руках — обратитесь к врачу.",
+    ],
+  },
+};
 
-  // (a) повторяющаяся асимметрия — по числу эпизодов, без требования нескольких дней подряд
-  const totalAsym = weekAgg.leftAsym + weekAgg.rightAsym;
-  if (totalAsym >= 4 && Math.max(weekAgg.leftAsym, weekAgg.rightAsym) / totalAsym >= 0.6) {
-    reasons.push("Повторяющаяся асимметрия плеч отмечена по данным мониторинга.");
+export function lupAnalysis(agg, { prev = null, seed = 0 } = {}) {
+  if (!agg || agg.dur < MIN_SCORE_SEC) return null;
+  const tier = lupTier(agg.badPct);
+  const t = T[tier];
+  const m = {
+    dur: fmtSpan(agg.dur), good: pct(agg.goodPct), bad: pct(agg.badPct),
+    avg: deg(agg.avgAngle), max: deg(agg.maxAngle), eps: times(agg.episodes.length),
+  };
+  const analysis = [t.analysis(m)];
+
+  if (tier !== "excellent" && agg.maxEpisode !== null && agg.maxEpisode >= 20) {
+    analysis.push(`Самый долгий непрерывный наклон длился ${fmtSpan(agg.maxEpisode)} — всё это время шея была под повышенной нагрузкой.`);
   }
-  // (b) устойчиво высокая доля плохой осанки
-  if (weekAgg.badPct !== null && weekAgg.badPct >= 0.25) {
-    reasons.push(`Плохая осанка занимает заметную часть времени мониторинга — ${pct(weekAgg.badPct)}%.`);
+  const asym = agg.leftAsym + agg.rightAsym;
+  if (asym >= 2) {
+    const side = agg.leftAsym >= agg.rightAsym ? "левое" : "правое";
+    analysis.push(`Ещё LUP AI заметил перекос плеч: чаще опускалось ${side} плечо (${times(Math.max(agg.leftAsym, agg.rightAsym))}). Держите плечи на одной линии и не опирайтесь на один локоть.`);
   }
-  // (c) растущая частота эпизодов — сравниваем первую и вторую половину дней с данными за неделю;
-  // это по своей природе многодневный тренд и на короткой демо-сессии обычно не сработает — это нормально.
-  const withData = days.filter((d) => d.agg.dur >= MIN_DAY_SEC);
-  const half = Math.ceil(days.length / 2);
-  const first = days.slice(0, half).filter((d) => d.agg.dur >= MIN_DAY_SEC);
-  const second = days.slice(half).filter((d) => d.agg.dur >= MIN_DAY_SEC);
-  if (first.length && second.length) {
-    const firstAvg = first.reduce((s, d) => s + d.agg.episodes.length, 0) / first.length;
-    const secondAvg = second.reduce((s, d) => s + d.agg.episodes.length, 0) / second.length;
-    if (secondAvg >= 1 && secondAvg > firstAvg * 1.3) reasons.push("Частота эпизодов плохой осанки растёт по сравнению с началом недели.");
-  }
-  // (d) необычно долгие непрерывные эпизоды
-  if (weekAgg.maxEpisode !== null && weekAgg.maxEpisode >= HIGH_RISK_EPISODE_SEC) {
-    reasons.push(`Были продолжительные непрерывные эпизоды плохой осанки — до ${Math.round(weekAgg.maxEpisode / 60)} мин.`);
+  if (prev && prev.dur >= MIN_SCORE_SEC) {
+    const was = pct(prev.badPct), now = pct(agg.badPct), d = was - now;
+    if (d >= 5) analysis.push(`По сравнению с прошлой сессией доля времени с наклоном снизилась с ${was}% до ${now}% — прогресс заметен.`);
+    else if (d <= -5) analysis.push(`По сравнению с прошлой сессией доля времени с наклоном выросла с ${was}% до ${now}% — соберитесь.`);
+    else analysis.push("Результат примерно такой же, как в прошлой сессии.");
   }
 
-  const level = reasons.length >= 3 ? "high" : reasons.length === 2 ? "moderate" : "low";
-  return { level, reasons, dataSec: weekAgg.dur, daysWithData: withData.length };
+  const title = t.titles[Math.abs(Math.floor(seed)) % t.titles.length];
+  return {
+    tier, badge: t.badge, title,
+    sections: [
+      { h: "Анализ", p: analysis },
+      { h: t.effectsTitle, p: [t.effects] },
+      { h: "Что делать", list: t.advice },
+    ],
+  };
 }
 
 /* ------------------------------------------------------------------ */
 /* Единая точка входа для UI: считает всё из сырых сессий один раз.    */
 /* ------------------------------------------------------------------ */
 export function buildReport(sessions, nowMs = Date.now()) {
-  const clean = (sessions || []).filter((s) => s && s.dur >= 5); // отбрасываем случайный мусор (<5 с)
-  const todayKey = dayKey(nowMs), yestKey = dayKey(nowMs - DAY_MS);
-  const today = clean.filter((s) => dayKey(s.start) === todayKey);
-  const yesterday = clean.filter((s) => dayKey(s.start) === yestKey);
+  const clean = (sessions || []).filter((s) => s && s.dur > 0).sort((a, b) => a.start - b.start);
+  const todayKey = dayKey(nowMs);
   const days = byDay(clean, 7, nowMs);
-  const weekSessions = days.flatMap((d) => d.sessions);
-  const prevWeekSessions = days.slice(0, 6).flatMap((d) => d.sessions); // неделя без сегодняшнего дня
-
-  const todayAgg = aggregate(today);
-  const yesterdayAgg = aggregate(yesterday);
-  const weekAgg = aggregate(weekSessions);
-  const prevWeekAgg = aggregate(prevWeekSessions);
+  const latest = clean.at(-1) ?? null;
+  const prev = clean.slice(0, -1).reverse().find((s) => s.dur >= MIN_SCORE_SEC) ?? null;
+  const latestAgg = latest ? aggregate([latest]) : null;
 
   return {
-    today: todayAgg, yesterday: yesterdayAgg, days, weekAgg, prevWeekAgg,
-    score: postureScore(todayAgg),
-    insights: generateInsights({ todayAgg, yesterdayAgg, weekAgg, prevWeekAgg, days }),
-    risk: riskLevel({ days }),
+    today: aggregate(clean.filter((s) => dayKey(s.start) === todayKey)),
+    days,
+    weekAgg: aggregate(days.flatMap((d) => d.sessions)),
+    latest, latestAgg,
+    score: latestAgg ? postureScore(latestAgg) : null,
+    lup: latestAgg ? lupAnalysis(latestAgg, { prev: prev ? aggregate([prev]) : null, seed: latest.start / 1000 }) : null,
     sessionCount: clean.length,
   };
 }

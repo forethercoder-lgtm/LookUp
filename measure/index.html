@@ -396,19 +396,27 @@
   </div>
 </section>
 
-<!-- ============ AI-АНАЛИЗ ОСАНКИ ============ -->
+<!-- ============ LUP AI ============ -->
 <section id="insights">
-  <h2>AI-анализ осанки</h2>
-  <p class="note">Анализ строится по истории мониторинга на этом устройстве: без внешнего AI и без отправки данных с сайта. Смотрит не на текущий кадр, а на то, как вы сидели раньше.</p>
+  <h2>LUP AI</h2>
+  <p class="note">Персональный анализ вашей осанки: LUP AI изучает, как вы сидели, и объясняет, что это значит и что делать. Данные остаются на вашем устройстве.</p>
 
   <div id="insightsEmpty" class="card glass emptyNote" hidden>
-    Пока недостаточно данных. Нажмите «Старт» в блоке «Контроль» — после первой сессии мониторинга здесь появится статистика.
+    LUP AI ждёт данных. Нажмите «Старт» в блоке «Контроль» — через минуту здесь появится персональный анализ.
   </div>
 
   <div id="insightsBody" hidden>
+    <div class="card glass lupCard">
+      <div class="lupHead">
+        <span class="lupLogo">LUP AI</span>
+        <span id="lupMeta" class="lupMeta"></span>
+      </div>
+      <div id="lupBody" class="lupBody"></div>
+    </div>
+
     <div class="grid2">
       <div class="card glass">
-        <h3>Оценка осанки сегодня</h3>
+        <h3>Оценка последней сессии</h3>
         <div class="scoreRow">
           <div class="scoreRing" id="iScoreRing"><b><span id="iScore">—</span></b></div>
           <p class="note" id="iScoreNote">—</p>
@@ -429,18 +437,6 @@
     <div class="card glass">
       <h3>Тренд за 7 дней</h3>
       <div id="insightsWeek" class="bars"></div>
-    </div>
-
-    <div class="card glass">
-      <h3>AI-инсайты</h3>
-      <div id="insightsList" class="insightList"></div>
-    </div>
-
-    <div class="card glass">
-      <h3>Мониторинг риска осанки</h3>
-      <span id="insightsRisk" class="riskPill">—</span>
-      <div id="insightsRiskReasons"></div>
-      <p class="note">Это индикатор паттернов осанки, а не медицинский риск и не диагноз. LookUp не диагностирует и не лечит заболевания.</p>
     </div>
 
     <div class="card glass">
