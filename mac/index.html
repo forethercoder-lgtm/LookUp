@@ -21,6 +21,7 @@
     <a href="#setup">Экран</a>
     <a href="#live">Контроль</a>
     <a href="#spine">Позвоночник</a>
+    <a href="#insights">AI-анализ</a>
     <a href="#experiment">Тест</a>
     <a href="../sources/">Источники</a>
     <a href="../">Система</a>
@@ -188,6 +189,65 @@
   </div>
 </section>
 
+
+<!-- ============ AI-АНАЛИЗ ОСАНКИ ============ -->
+<section id="insights">
+  <h2>AI-анализ осанки</h2>
+  <p class="note">Анализ строится по истории мониторинга на этом устройстве: без внешнего AI и без отправки данных с сайта. Смотрит не на текущий кадр, а на то, как вы сидели раньше.</p>
+
+  <div id="insightsEmpty" class="card glass emptyNote" hidden>
+    Пока недостаточно данных. Нажмите «Старт» в блоке «Контроль» — после первой сессии мониторинга здесь появится статистика.
+  </div>
+
+  <div id="insightsBody" hidden>
+    <div class="grid2">
+      <div class="card glass">
+        <h3>Оценка осанки сегодня</h3>
+        <div class="scoreRow">
+          <div class="scoreRing" id="iScoreRing"><b><span id="iScore">—</span></b></div>
+          <p class="note" id="iScoreNote">—</p>
+        </div>
+      </div>
+      <div class="card glass">
+        <h3>Сегодня</h3>
+        <div class="metrics">
+          <div class="metric"><b id="iTime">—</b><span>время мониторинга</span></div>
+          <div class="metric"><b id="iGoodPct">—</b><span>в норме</span></div>
+          <div class="metric"><b id="iBadPct">—</b><span>плохая осанка</span></div>
+          <div class="metric"><b id="iEpisodes">—</b><span>эпизодов</span></div>
+          <div class="metric"><b id="iAvgEpisode">—</b><span>средний эпизод</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card glass">
+      <h3>Тренд за 7 дней</h3>
+      <div id="insightsWeek" class="bars"></div>
+    </div>
+
+    <div class="card glass">
+      <h3>AI-инсайты</h3>
+      <div id="insightsList" class="insightList"></div>
+    </div>
+
+    <div class="card glass">
+      <h3>Мониторинг риска осанки</h3>
+      <span id="insightsRisk" class="riskPill">—</span>
+      <div id="insightsRiskReasons"></div>
+      <p class="note">Это индикатор паттернов осанки, а не медицинский риск и не диагноз. LookUp не диагностирует и не лечит заболевания.</p>
+    </div>
+
+    <div class="card glass">
+      <h3>История</h3>
+      <p id="historyWeekSummary" class="note"></p>
+      <p id="historyEmpty" class="emptyNote" hidden>Пока нет сохранённых сессий.</p>
+      <table id="historyTable">
+        <thead><tr><th>Когда</th><th>Длительность</th><th>В норме</th><th>Эпизодов</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</section>
 
 <!-- ============ ТЕСТ ============ -->
 <section id="experiment">

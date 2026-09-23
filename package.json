@@ -4,6 +4,6 @@
   "type": "module",
   "scripts": {
     "generate": "node build.mjs",
-    "test": "node --test tests/stats.test.mjs tests/geometry.test.mjs tests/spine.test.mjs"
+    "test": "node --test tests/stats.test.mjs tests/geometry.test.mjs tests/spine.test.mjs tests/insights.test.mjs"
   }
 }

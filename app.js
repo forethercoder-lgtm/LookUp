@@ -2,6 +2,7 @@ import { FaceLandmarker, PoseLandmarker, FilesetResolver } from "./vendor/vision
 import { figure } from "./figure.js";
 import { pitchFromMatrix, yawFromMatrix, mirroredTilt, distanceFromIpd, solveTilt as solveTiltCore } from "./geometry.js";
 import { buildSpine, renderSide, renderFront, sideWords } from "./spine.js";
+import { newSession, tickSession, finishSession, buildReport, postureScore, MIN_SCORE_SEC } from "./insights.js";
 
 const $ = (id) => document.getElementById(id);
 const SVGNS = "http://www.w3.org/2000/svg";
@@ -111,6 +112,7 @@ const st = {
   imu: null,           // {pitch, at}
   ws: null, imuWanted: false, retry: null,
   pip: null,
+  rec: null,           // текущая записываемая сессия для AI-анализа (insights.js), null вне мониторинга
 };
 
 window.__lookup = st; // для отладки из консоли
@@ -324,6 +326,7 @@ function startDemo() {
 }
 
 function stopAll() {
+  finalizeSession();
   stopTicker();
   stopFrameReader();
   if (st.stream) st.stream.getTracks().forEach((t) => t.stop());
@@ -529,6 +532,8 @@ function beginNod() {
 
 function finishCalibration() {
   st.phase = "monitoring";
+  // AI-анализ (insights.js) пишет только для реальных источников, не для демо-режима
+  st.rec = st.source !== "sim" ? newSession(Date.now(), { platform: PLATFORM }) : null;
   const setup = (performance.now() - st.startedAt) / 1000;
   st.lastSetup = setup;
   $("setupTime").innerHTML = setup.toFixed(1) + " с " +
@@ -616,7 +621,9 @@ function tick(now) {
   updateSitTimer(now);
   updatePip();
   renderSpine(now);
+  if (st.phase === "monitoring" && now - lastInsightsRender > 2000) { lastInsightsRender = now; renderInsights(); }
 }
+let lastInsightsRender = 0;
 
 function handleSample({ cam, imu }, dt, now) {
   if (st.phase === "calibrating") {
@@ -670,6 +677,12 @@ function handleSample({ cam, imu }, dt, now) {
 
   const bad = headBad || sh === "slouch" || sh === "tilt" || lean;
   const reason = headBad ? "↑ Голову выше!" : sh === "slouch" ? "Выпрямитесь!" : sh === "tilt" ? "↔ Ровнее плечи!" : "↔ Отодвиньтесь от экрана!";
+
+  if (st.rec) {
+    st.rec.sensor = st.usingImu ? "imu" : "cam";
+    const asymDir = sh === "tilt" ? (st.sh.tiltS > 0 ? "right" : "left") : null;
+    tickSession(st.rec, { dt, angle: st.angle, bad, headBad, asymDir, at: Date.now() });
+  }
 
   st.sessTotal += dt;
   if (!bad) st.sessSafe += dt;
@@ -977,6 +990,124 @@ $("spineClear")?.addEventListener("click", () => { spineSnap = null; lastSpine =
 /* ------------------------------------------------------------------ */
 /* Тест «с / без»                                                      */
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ */
+/* AI-анализ осанки: история сессий (insights.js) — сохранение,        */
+/* завершение текущей записи и отрисовка дашборда.                     */
+/* ------------------------------------------------------------------ */
+const SESS_KEY = "lookup.sessions.v1";
+const SESS_MAX = 400;       // старые сессии обрезаем, чтобы localStorage не разрастался
+const SESS_MIN_DUR = 20;    // сек — короче не сохраняем (случайный клик «Старт»/«Стоп»)
+const loadSessions = () => { try { return JSON.parse(localStorage.getItem(SESS_KEY)) || []; } catch { return []; } };
+const saveSessions = (arr) => { try { localStorage.setItem(SESS_KEY, JSON.stringify(arr.slice(-SESS_MAX))); } catch {} };
+
+function finalizeSession() {
+  if (!st.rec) return;
+  finishSession(st.rec, Date.now());
+  if (st.rec.dur >= SESS_MIN_DUR) {
+    const arr = loadSessions();
+    arr.push(st.rec);
+    saveSessions(arr);
+  }
+  st.rec = null;
+  renderInsights();
+}
+
+const fmtDur = (sec) => {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  if (h > 0) return `${h} ч ${m} м`;
+  if (m > 0) return `${m} м`;
+  return `${s} с`;
+};
+const fmtWhen = (ms) => {
+  const d = new Date(ms), now = new Date();
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+  const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  if (sameDay(d, now)) return `Сегодня, ${time}`;
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  if (sameDay(d, y)) return `Вчера, ${time}`;
+  return `${d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })}, ${time}`;
+};
+
+function renderInsights() {
+  if (!$("insightsBody")) return; // страница «Замер»: секции нет
+  const live = st.rec ? [{ ...st.rec, episodes: st.rec._streak > 0 ? [...st.rec.episodes, st.rec._streak] : st.rec.episodes }] : [];
+  const stored = loadSessions();
+  const report = buildReport(stored.concat(live), Date.now());
+  const has = report.sessionCount > 0;
+  $("insightsEmpty").hidden = has;
+  $("insightsBody").hidden = !has;
+  if (!has) return;
+
+  const ring = $("iScoreRing");
+  if (report.score === null) {
+    $("iScore").textContent = "—";
+    const left = Math.max(0, Math.ceil((MIN_SCORE_SEC - report.today.dur) / 60));
+    $("iScoreNote").textContent = report.today.dur > 0
+      ? `Недостаточно данных сегодня: наберите ещё ~${left} мин мониторинга.`
+      : "Начните мониторинг сегодня, чтобы увидеть оценку.";
+    ring.style.setProperty("--score", 0);
+    ring.style.setProperty("--ring-color", "var(--faint)");
+  } else {
+    $("iScore").textContent = report.score;
+    $("iScoreNote").textContent = "Считается по сегодняшним данным этого устройства: доля времени в норме, частота и длительность эпизодов.";
+    ring.style.setProperty("--score", report.score);
+    ring.style.setProperty("--ring-color", report.score >= 75 ? "var(--ok)" : report.score >= 50 ? "var(--warn)" : "var(--bad)");
+  }
+
+  const t = report.today;
+  $("iTime").textContent = t.dur > 0 ? fmtDur(t.dur) : "—";
+  $("iGoodPct").textContent = t.dur > 0 ? Math.round(t.goodPct * 100) + " %" : "—";
+  $("iBadPct").textContent = t.dur > 0 ? Math.round(t.badPct * 100) + " %" : "—";
+  $("iEpisodes").textContent = t.dur > 0 ? String(t.episodes.length) : "—";
+  $("iAvgEpisode").textContent = t.avgEpisode !== null ? Math.round(t.avgEpisode) + " с" : "—";
+
+  const week = $("insightsWeek");
+  week.innerHTML = "";
+  for (const d of report.days) {
+    const score = postureScore(d.agg);
+    const color = score === null ? "var(--faint)" : score >= 75 ? "var(--ok)" : score >= 50 ? "var(--warn)" : "var(--bad)";
+    const div = document.createElement("div");
+    div.className = "bar";
+    div.innerHTML = `<b>${score === null ? "—" : score}</b><i style="height:${score === null ? 4 : Math.max(4, score / 100 * 130)}px;background:${color}"></i><em>${d.label}</em>`;
+    week.appendChild(div);
+  }
+
+  const list = $("insightsList");
+  list.innerHTML = report.insights.length
+    ? report.insights.map((ins) => `<div class="insightItem ${ins.kind}"><b>${ins.kind === "good" ? "✓" : "⚠"}</b><span>${ins.text}</span></div>`).join("")
+    : `<p class="emptyNote">Пока недостаточно данных для анализа паттернов. Продолжайте мониторинг несколько дней подряд — здесь появятся конкретные наблюдения.</p>`;
+
+  const risk = $("insightsRisk"), reasons = $("insightsRiskReasons");
+  if (report.risk.level === null) {
+    risk.className = "riskPill";
+    risk.textContent = "Недостаточно данных";
+    reasons.innerHTML = `<p class="emptyNote">Нужно хотя бы 3 дня мониторинга за последнюю неделю (сейчас ${report.risk.daysWithData}).</p>`;
+  } else {
+    risk.className = "riskPill " + report.risk.level;
+    risk.textContent = { low: "Низкий", moderate: "Средний", high: "Высокий" }[report.risk.level];
+    reasons.innerHTML = report.risk.reasons.length
+      ? `<ul class="plain">${report.risk.reasons.map((r) => `<li>${r}</li>`).join("")}</ul>`
+      : `<p class="emptyNote">Устойчивых паттернов не найдено.</p>`;
+  }
+
+  const runs = stored.slice().reverse().slice(0, 20);
+  const tb = $("historyTable").querySelector("tbody");
+  tb.innerHTML = "";
+  for (const s of runs) {
+    const good = s.dur > 0 ? Math.round((s.good / s.dur) * 100) : 0;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${fmtWhen(s.start)}</td><td>${fmtDur(s.dur)}</td><td>${good} %</td><td>${s.episodes.length}</td>`;
+    tb.appendChild(tr);
+  }
+  $("historyEmpty").hidden = runs.length > 0;
+  $("historyTable").hidden = runs.length === 0;
+  const w = report.weekAgg;
+  $("historyWeekSummary").textContent = w.dur > 0
+    ? `Последние 7 дней: ${fmtDur(w.dur)} мониторинга, ${Math.round(w.goodPct * 100)} % в норме, ${w.episodes.length} эпизодов.`
+    : "";
+}
+
 const RUNS_KEY = "lookup.runs.v2";
 const loadRuns = () => { try { return JSON.parse(localStorage.getItem(RUNS_KEY)) || []; } catch { return []; } };
 const saveRuns = (r) => { try { localStorage.setItem(RUNS_KEY, JSON.stringify(r)); } catch {} };
@@ -1201,6 +1332,7 @@ $("setLimit").oninput = () => { buildGauge(getLimit()); renderCalc(); };
 $("cH").oninput = () => { $("cHr").value = $("cH").value; renderCalc(); };
 $("cHr").oninput = () => { $("cH").value = $("cHr").value; renderCalc(); };
 $("btnBest").onclick = () => { $("cH").value = $("cHr").value = bestHeight(); renderCalc(); };
+window.addEventListener("beforeunload", finalizeSession); // сохраняем текущую сессию, если вкладку просто закрыли
 
 $("heroFig").innerHTML = figure(8, COLORS.ok);
 $("liveFig").innerHTML = figure(0, COLORS.idle);
@@ -1209,4 +1341,5 @@ buildGauge(getLimit());
 renderLoadChart();
 renderCalc();
 renderRuns();
+renderInsights();
 try { if (localStorage.getItem("lookup.phones") === "1") connectPhones(); } catch {}
